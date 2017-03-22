@@ -14,6 +14,7 @@
 
 
 #include "DummyAction.h"
+#include "DataUtility.h"
 
 // Trave the statement and find call expression
 void DummyVisitor::travelStmt(Stmt* stmt){
@@ -21,17 +22,24 @@ void DummyVisitor::travelStmt(Stmt* stmt){
     if(!stmt)
         return;
     
+    // If find a call expression
     if(CallExpr* callExpr = dyn_cast<CallExpr>(stmt)){
         if(FunctionDecl* functionDecl = callExpr->getDirectCallee()){
             
+            // Get the name, call location and defination location of the call expression
             string name = functionDecl->getNameAsString();
             FullSourceLoc callstart = CI->getASTContext().getFullLoc(callExpr->getLocStart()).getExpansionLoc();
             FullSourceLoc defstart = CI->getASTContext().getFullLoc(functionDecl->getLocStart()).getSpellingLoc();
-            llvm::outs()<<name<<"@"<<callstart.printToString(callstart.getManager())<<
-                        "#"<<defstart.printToString(defstart.getManager())<<"\n";
+            
+            // Store the call information into CallData
+            CallData callData;
+            callData.addCallExpression(name,
+                                       callstart.printToString(callstart.getManager()),
+                                       defstart.printToString(defstart.getManager()));
         }
     }
     
+    // Travel the sub-statament
     for (Stmt::child_iterator it = stmt->child_begin(); it != stmt->child_end(); ++it){
         if(Stmt *child = *it)
             travelStmt(child);

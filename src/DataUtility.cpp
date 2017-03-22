@@ -47,3 +47,81 @@ void ConfigData::printName(){
     }
     return;
 }
+
+
+CallInfo::CallInfo(){
+    totalCallNumber = 0;
+    callProject = 0;
+    memset(callNumber, 0, MAX_PROJECT);
+    
+    defLocation = "";
+    multiDef = false;
+    
+    outProjectDef = false;
+}
+
+// Method and member in CallData
+// The memebers are static, and used to store all the call information
+ConfigData CallData::configData;
+int CallData::totalIndex;
+map<string, int> CallData::call2index;
+vector<CallInfo> CallData::callInfoVec;
+
+void CallData::addCallExpression(string callName, string callLocation, string defLocation){
+    
+    string domainName = getDomainName(callLocation);
+    string projectName = getProjectName(callLocation);
+    int projectID = getProjectID(domainName, projectName);
+    
+    if(call2index[callName] == 0){
+        totalIndex++;
+        call2index[callName] = totalIndex;
+        
+        CallInfo callInfo;
+        
+        callInfo.totalCallNumber++;
+        if(callInfo.callNumber[projectID] == 0)
+            callInfo.callProject++;
+        callInfo.callNumber[projectID]++;
+        
+        callInfo.defLocation = defLocation;
+        callInfo.multiDef = false;
+        
+        callInfo.outProjectDef = isOutProjectDef(callLocation, projectName);
+        
+        callInfoVec.push_back(callInfo);
+    }
+    else{
+        int curIndex = call2index[callName];
+        
+        callInfoVec[curIndex].totalCallNumber++;
+        if(callInfoVec[curIndex].callNumber[projectID] == 0)
+            callInfoVec[curIndex].callProject++;
+        callInfoVec[curIndex].callNumber[projectID]++;
+        
+        if(callInfoVec[curIndex].defLocation != defLocation)
+            callInfoVec[curIndex].multiDef = true;
+    }
+    
+    return;
+}
+
+string CallData::getDomainName(string callLocation){
+    
+    return "";
+}
+
+string CallData::getProjectName(string callLocation){
+    
+    return "";
+}
+
+int CallData::getProjectID(string domainName, string projectName){
+    
+    return 0;
+}
+
+bool CallData::isOutProjectDef(string callLocation, string projectName){
+    
+    return false;
+}

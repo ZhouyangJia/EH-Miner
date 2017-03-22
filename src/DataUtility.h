@@ -17,8 +17,12 @@
 #define DataUtility_h
 
 #include <vector>
+#include <map>
+
 #include <iostream>
 #include <string.h>
+
+#define MAX_PROJECT 100
 
 using namespace std;
 
@@ -44,9 +48,38 @@ private:
     static vector<vector<string>> projectName;
 };
 
+struct CallInfo{
+    
+    CallInfo();
+    
+    int totalCallNumber;
+    int callProject;
+    int callNumber[MAX_PROJECT];
+    
+    string defLocation;
+    bool multiDef;
+    
+    bool outProjectDef;
+};
 
 class CallData{
+public:
+    // Add a call expression
+    void addCallExpression(string callName, string callLocation, string defLocation);
+
+private:
+    string getDomainName(string callLocation);
     
+    string getProjectName(string callLocation);
+    
+    int getProjectID(string domainName, string projectName);
+    
+    bool isOutProjectDef(string callLocation, string projectName);
+    
+    static ConfigData configData;
+    static map<string, int> call2index;
+    static int totalIndex;
+    static vector<CallInfo> callInfoVec;
 };
 
 #endif /* DataUtility_h */
