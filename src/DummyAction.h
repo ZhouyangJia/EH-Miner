@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+
 #ifndef Dummy_h
 #define Dummy_h
 
@@ -49,10 +50,10 @@
 #include "clang/Tooling/CommonOptionsParser.h"
 
 using namespace std;
-
 using namespace clang::driver;
 using namespace clang::tooling;
 using namespace clang;
+
 
 class DummyVisitor : public RecursiveASTVisitor <DummyVisitor> {
 public:
@@ -67,6 +68,7 @@ private:
     StringRef InFile;
 };
 
+
 class DummyConsumer : public ASTConsumer {
 public:
     explicit DummyConsumer(CompilerInstance* CI, StringRef InFile) : Visitor(CI, InFile){}
@@ -78,11 +80,11 @@ private:
     StringRef InFile;
 };
 
+
 class DummyAction : public ASTFrontendAction {
 public:
     virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, StringRef InFile);
 private:
 };
-
 
 #endif /* Dummy_h */
