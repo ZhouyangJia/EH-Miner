@@ -4,9 +4,15 @@ set( LLVM_LINK_COMPONENTS
   Support
   )
 
+include_directories("/usr/local/include")
+link_directories("/usr/local/lib")
+
 add_clang_executable(clang-dummy
   src/DummyAction.cpp
+  src/DataUtility.cpp
   src/Main.cpp
+  src/DummyAction.h
+  src/DataUtility.h
   )
 
 target_link_libraries(clang-dummy
@@ -17,6 +23,7 @@ target_link_libraries(clang-dummy
   clangRewriteFrontend
   clangStaticAnalyzerFrontend
   clangTooling
+  config
   )
 
 install(TARGETS clang-dummy

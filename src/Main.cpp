@@ -18,8 +18,13 @@
 #include "clang/Tooling/Tooling.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Driver/Options.h"
+
 #include "DummyAction.h"
+#include "DataUtility.h"
+
 #include "libconfig.h"
+
+#include <vector>
 
 #define MAX_DOMAIN 100
 #define MAX_PROJECT_PER_DOMAIN 100
@@ -32,7 +37,7 @@ using namespace clang;
 using namespace llvm;
 using namespace std;
 
-
+// Print help messages
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 static cl::extrahelp MoreHelp(
                               "\tFor example, to run clang-dummy on all files in a subtree of the\n"
@@ -49,6 +54,7 @@ static cl::extrahelp MoreHelp(
                               "\n"
                               );
 
+// Deal with command line options
 static cl::OptionCategory ClangMytoolCategory("clang-dummy options");
 
 static std::unique_ptr<opt::OptTable> Options(createDriverOptTable());
@@ -61,12 +67,17 @@ static cl::opt<string> ConfigFile("config-file",
                                       cl::desc("Specify config file, the default one is /Users/zhouyangjia/llvm-4.0.0.src/tools/clang/tools/clang-dummy/etc/test.conf."),
                                       cl::cat(ClangMytoolCategory));
 
-
+// Read and parse config file, and then store the domain and project information to ConfigData class
 int initConfig(string config_file){
     
+    // Used to store the information of config file
+    ConfigData configData;
+    
+    // Declare the libconfig object and init
     config_t conf;
     config_init(&conf);
     
+    // Read config file, and handle I/O error and Parse error
     int rc;
     rc = config_read_file(&conf, config_file.c_str());
     if(rc == CONFIG_FALSE){
@@ -77,6 +88,7 @@ int initConfig(string config_file){
         return EXIT_FAILURE;
     }
     
+    // Fine "domains" setting which specify the domains to be analyzed
     config_setting_t* domains_setting;
     domains_setting = config_lookup(&conf, "domains");
     if(domains_setting == NULL){
@@ -84,6 +96,7 @@ int initConfig(string config_file){
         return EXIT_FAILURE;
     }
     
+    // Count the number of domains, and limit the max number to 100
     unsigned domains_length;
     domains_length = config_setting_length(domains_setting);
     if(domains_length == 0){
@@ -94,12 +107,15 @@ int initConfig(string config_file){
         errs()<<"Too many domains, only the first "<<MAX_DOMAIN<<" domains will be analyzed!\n";
         domains_length = MAX_DOMAIN;
     }
-   
-    // for each domain
+    
+    // For each domain
     for(unsigned i = 0; i < domains_length; i++){
+        
+        // Get the "path" to make libconfig happy
         char domains_index[MAX_NAME_LENGTH * 2];
         sprintf(domains_index, "domains.[%d]", i);
         
+        // Read domain name through "path", and limit the its lenght
         const char* domain_name;
         rc = config_lookup_string(&conf, domains_index, &domain_name);
         if(rc == CONFIG_FALSE){
@@ -111,23 +127,31 @@ int initConfig(string config_file){
             return EXIT_FAILURE;
         }
         
+        // Store domain name to ConfigData class
+        configData.addDomainName(domain_name);
+        
+        // Get the corresponding projects setting for each domain through domain name
         config_setting_t* projects_setting;
         projects_setting = config_lookup(&conf, domain_name);
         if(projects_setting == NULL){
             continue;
         }
         
+        // Get the number of projects for the given domain
         unsigned projects_length;
         projects_length = config_setting_length(projects_setting);
         if(projects_length == 0){
             continue;
         }
         
-        // for each project in domain.[i]
+        // For each project in domain.[i]
         for(unsigned j = 0; j < projects_length; j++){
+            
+            // Get the "path" to make libconfig happy
             char projects_index[MAX_NAME_LENGTH * 2];
             sprintf(projects_index, "%s.[%d]", domain_name, j);
             
+            // Read project name through "path", and limit the its lenght
             const char* project_name;
             rc = config_lookup_string(&conf, projects_index, &project_name);
             if(rc == CONFIG_FALSE){
@@ -139,19 +163,19 @@ int initConfig(string config_file){
                 return EXIT_FAILURE;
             }
             
-            outs()<<project_name<<"\n";
-            //TODO
+            // Store project name to ConfigData class
+            configData.addProjectName(i, project_name);
         }
     }
     
+    // Free libconfig object and exit success
     config_destroy(&conf);
     return EXIT_SUCCESS;
 }
 
-
+// Please read from the program entrance :)
 int main(int argc, const char **argv){
-
-
+    
     CommonOptionsParser OptionsParser(argc, argv, ClangMytoolCategory);
     vector<string> source = OptionsParser.getSourcePathList();
 

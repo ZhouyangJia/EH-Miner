@@ -15,7 +15,7 @@
 
 #include "DummyAction.h"
 
-
+// Trave the statement and find call expression
 void DummyVisitor::travelStmt(Stmt* stmt){
     
     if(!stmt)
@@ -25,7 +25,10 @@ void DummyVisitor::travelStmt(Stmt* stmt){
         if(FunctionDecl* functionDecl = callExpr->getDirectCallee()){
             
             string name = functionDecl->getNameAsString();
-            llvm::outs()<<name<<"@"<<InFile<<"\n";
+            FullSourceLoc callstart = CI->getASTContext().getFullLoc(callExpr->getLocStart()).getExpansionLoc();
+            FullSourceLoc defstart = CI->getASTContext().getFullLoc(functionDecl->getLocStart()).getSpellingLoc();
+            llvm::outs()<<name<<"@"<<callstart.printToString(callstart.getManager())<<
+                        "#"<<defstart.printToString(defstart.getManager())<<"\n";
         }
     }
     
@@ -35,7 +38,7 @@ void DummyVisitor::travelStmt(Stmt* stmt){
     }
 }
 
-
+// Visit the function declaration and travel the function body
 bool DummyVisitor::VisitFunctionDecl(FunctionDecl* Declaration) {
     if(!(Declaration->isThisDeclarationADefinition() && Declaration->hasBody()))
         return true;
@@ -53,19 +56,18 @@ bool DummyVisitor::VisitFunctionDecl(FunctionDecl* Declaration) {
     //errs()<<" @ " << functionstart.printToString(functionstart.getManager()) <<"\n";
     
     if(Declaration->getBody()){
-        
         travelStmt(Declaration->getBody());
     }
     return true;
 }
 
-
+// Handle the translation unit and visit each function declaration
 void DummyConsumer::HandleTranslationUnit(ASTContext& Context) {
     Visitor.TraverseDecl(Context.getTranslationUnitDecl());
     return;
 }
 
-
+// Creat DummyConsuer instance and return to ActionFactory
 std::unique_ptr<ASTConsumer> DummyAction::CreateASTConsumer(CompilerInstance& Compiler, StringRef InFile) {
     return std::unique_ptr<ASTConsumer>(new DummyConsumer(&Compiler, InFile));
 }

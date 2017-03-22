@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 
-#ifndef Dummy_h
-#define Dummy_h
+#ifndef DummyAction_h
+#define DummyAction_h
 
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Option/OptTable.h"
@@ -58,9 +58,11 @@ using namespace clang;
 class DummyVisitor : public RecursiveASTVisitor <DummyVisitor> {
 public:
     explicit DummyVisitor(CompilerInstance* CI, StringRef InFile) : CI(CI), InFile(InFile){};
-    
+
+    // Trave the statement and find call expression
     bool VisitFunctionDecl (FunctionDecl*);
-    
+
+    // Visit the function declaration and travel the function body
     void travelStmt(Stmt*);
     
 private:
@@ -73,6 +75,7 @@ class DummyConsumer : public ASTConsumer {
 public:
     explicit DummyConsumer(CompilerInstance* CI, StringRef InFile) : Visitor(CI, InFile){}
     
+    // Handle the translation unit and visit each function declaration
     virtual void HandleTranslationUnit (clang::ASTContext &Context);
     
 private:
@@ -83,8 +86,10 @@ private:
 
 class DummyAction : public ASTFrontendAction {
 public:
+    // Creat DummyConsuer instance and return to ActionFactory
     virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, StringRef InFile);
+    
 private:
 };
 
-#endif /* Dummy_h */
+#endif /* DummyAction_h */
