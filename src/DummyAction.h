@@ -55,6 +55,16 @@ using namespace clang::tooling;
 using namespace clang;
 
 
+//===----------------------------------------------------------------------===//
+//
+//            DummyAction, DummyConsumer and DummyVisitor Classes
+//
+//===----------------------------------------------------------------------===//
+// These three classes work in tandem to prefrom the frontend analysis, if you
+// have any question, please check the offical explanation:
+//      http://clang.llvm.org/docs/RAVFrontendAction.html
+//===----------------------------------------------------------------------===//
+
 class DummyVisitor : public RecursiveASTVisitor <DummyVisitor> {
 public:
     explicit DummyVisitor(CompilerInstance* CI, StringRef InFile) : CI(CI), InFile(InFile){};

@@ -16,6 +16,16 @@
 #include "DummyAction.h"
 #include "DataUtility.h"
 
+//===----------------------------------------------------------------------===//
+//
+//            DummyAction, DummyConsumer and DummyVisitor Classes
+//
+//===----------------------------------------------------------------------===//
+// These three classes work in tandem to prefrom the frontend analysis, if you
+// have any question, please check the offical explanation:
+//      http://clang.llvm.org/docs/RAVFrontendAction.html
+//===----------------------------------------------------------------------===//
+
 // Trave the statement and find call expression
 void DummyVisitor::travelStmt(Stmt* stmt){
     
@@ -28,14 +38,25 @@ void DummyVisitor::travelStmt(Stmt* stmt){
             
             // Get the name, call location and defination location of the call expression
             string name = functionDecl->getNameAsString();
-            FullSourceLoc callstart = CI->getASTContext().getFullLoc(callExpr->getLocStart()).getExpansionLoc();
-            FullSourceLoc defstart = CI->getASTContext().getFullLoc(functionDecl->getLocStart()).getSpellingLoc();
+            FullSourceLoc callstart = CI->getASTContext().getFullLoc(callExpr->getLocStart());
+            FullSourceLoc defstart = CI->getASTContext().getFullLoc(functionDecl->getLocStart());
             
-            // Store the call information into CallData
-            CallData callData;
-            callData.addCallExpression(name,
-                                       callstart.printToString(callstart.getManager()),
-                                       defstart.printToString(defstart.getManager()));
+            SourceLocation a;
+            
+            if(callstart.isValid() && defstart.isValid()){
+                callstart = callstart.getExpansionLoc();
+                defstart = defstart.getSpellingLoc();
+
+            
+                // Store the call information into CallData
+                CallData callData;
+                callData.addCallExpression(name,
+                                           // The API is behaving inconsistently, more infomation see
+                                           // http://lists.llvm.org/pipermail/cfe-dev/2016-October/051092.html
+                                           //callstart.printToString(callstart.getManager()),
+                                           InFile.str(),
+                                           defstart.printToString(defstart.getManager()));
+            }
         }
     }
     

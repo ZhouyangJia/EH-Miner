@@ -194,14 +194,21 @@ int main(int argc, const char **argv){
     std::unique_ptr<FrontendActionFactory> FrontendFactory;
     if(FindFunctionCall){
         FrontendFactory = newFrontendActionFactory<DummyAction>();
+        
+        // We analyze the source files one by one, since something weird happens when analyzing at once.
+        // More details see http://lists.llvm.org/pipermail/cfe-dev/2015-April/042654.html
         for(unsigned i = 0; i < source.size(); i++){
             vector<string> mysource;
             mysource.push_back(source[i]);
             llvm::errs()<<"["<<i+1<<"/"<<source.size()<<"]"<<" Now analyze the file: "<<mysource[0]<<"\n";
             ClangTool Tool(OptionsParser.getCompilations(), mysource);
+            Tool.setDiagnosticConsumer(new IgnoringDiagConsumer());
             Tool.run(FrontendFactory.get());
         }
     }
+    
+    CallData callData;
+    callData.print();
     
     return 0;
 }
