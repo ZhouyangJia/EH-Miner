@@ -81,22 +81,35 @@ void ConfigData::printName(){
 // The meaning of each member can be found in DataUtility.h
 CallInfo::CallInfo(){
     callName = "";
-    totalCallNumber = 0;
-    callProject = 0;
-    memset(callNumber, 0, MAX_PROJECT*sizeof(int));
+    numDomain = 0;
+    numProject = 0;
+    numCallTotal = 0;
+    memset(numCallInDomain, 0, MAX_PROJECT*sizeof(int));
+    memset(numCallInProject, 0, MAX_PROJECT*sizeof(int));
     defLocation = "";
     multiDef = false;
     outProjectDef = false;
 }
 
 // Print the call infomation
-void CallInfo::print(){
-    // callName, callProject, totalCallNumber, outProjectDef, multiDef, callNumber, defLocation
-    cout<<callName<<", "<<callProject<<", "<<totalCallNumber<<", "<<outProjectDef<<", "<<multiDef<<", ";
-    for(int i = 0; i < MAX_PROJECT; i++){
-        cout<<callNumber[i]<<", ";
+void CallInfo::print(int domainNumber, int projectNumber){
+    
+    // callName, defLocation, outProjectDef, multiDef, numDomain, numProject, numCallTotal,
+    cout<<callName<<", ";
+    cout<<defLocation<<", "<<outProjectDef<<", "<<multiDef<<", ";
+    cout<<numDomain<<", "<<numProject<<", "<<numCallTotal<<", ";
+    
+    for(int i = 0; i < domainNumber; i++){
+        cout<<numCallInDomain[i]<<", ";
     }
-    cout<<defLocation<<endl;
+    
+    for(int i = 0; i < projectNumber; i++){
+        cout<<numCallInProject[i];
+        if(i == projectNumber - 1)
+            cout<<endl;
+        else
+            cout<<", ";
+    }
     return;
 }
 
@@ -117,6 +130,45 @@ int CallData::totalIndex;
 map<string, int> CallData::call2index;
 vector<CallInfo> CallData::callInfoVec;
 
+// Get the total number of calls
+int CallData::getTotalNumber(){
+    return totalIndex;
+}
+
+// Print all the call infomation
+void CallData::print(){
+    
+    if(totalIndex == 0)
+        return;
+    
+    cout<<"Call ID, Call Name, Def Location, Is Out Def, Is Multi Def, Num Domain, Num Project, Num Call Total";
+    
+    int domainNumber = 0;
+    int projectNumber = 0;
+    
+    vector<string> domainName = configData.getDomainName();
+    domainNumber = domainName.size();
+    for(unsigned i = 0; i < domainName.size(); i++){
+        cout<<", domain:"<<domainName[i];
+    }
+    
+    
+    vector<vector<string>> projectName = configData.getProjectName();
+    for(unsigned i = 0; i < projectName.size(); i++){
+        projectNumber += projectName[i].size();
+        for(unsigned j = 0; j < projectName[i].size(); j++){
+            cout<<", "<<domainName[i]<<":"<<projectName[i][j];
+        }
+    }
+    cout<<endl;
+    
+    for(int i = 1; i <= totalIndex; i++){
+        cout<<i<<", ";
+        callInfoVec[i-1].print(domainNumber, projectNumber);
+    }
+    return;
+}
+
 // Add a call expression
 void CallData::addCallExpression(string callName, string callLocation, string defLocation){
     
@@ -130,13 +182,15 @@ void CallData::addCallExpression(string callName, string callLocation, string de
         return;
     }
     
-    // Get the project ID of given path
-    int projectID = getProjectID(domainName, projectName);
-    if(projectID == -1){
+    // Get the domain ID and project ID of given path
+    pair<int, int> mDomProID = getDomainProjectID(domainName, projectName);
+    int domainID = mDomProID.first;
+    int projectID = mDomProID.second;
+    if(domainID == -1 || projectID == -1){
         cerr<<"Cannot find the ID of the given domain and project name: "<<domainName<<" and "<<projectName<<"!\n";
         return;
     }
-    if(projectID >= MAX_PROJECT){
+    if(domainID >= MAX_PROJECT || projectID >= MAX_PROJECT){
         cerr<<"Exceed the project limitation!\n";
         return;
     }
@@ -144,7 +198,7 @@ void CallData::addCallExpression(string callName, string callLocation, string de
     // The function is called the first time
     if(call2index[callName] == 0){
         
-        // Assign the index
+        // Update and assign the index
         totalIndex++;
         call2index[callName] = totalIndex;
         
@@ -152,10 +206,13 @@ void CallData::addCallExpression(string callName, string callLocation, string de
         CallInfo callInfo;
         
         callInfo.callName = callName;
-        callInfo.totalCallNumber++;
-        if(callInfo.callNumber[projectID] == 0)
-            callInfo.callProject++;
-        callInfo.callNumber[projectID]++;
+        callInfo.numCallTotal++;
+        if(callInfo.numCallInProject[projectID] == 0)
+            callInfo.numProject++;
+        if(callInfo.numCallInDomain[domainID] == 0)
+            callInfo.numDomain++;
+        callInfo.numCallInProject[projectID]++;
+        callInfo.numCallInDomain[domainID]++;
         callInfo.defLocation = defLocation;
         callInfo.multiDef = false;
         callInfo.outProjectDef = isOutProjectDef(defLocation, domainName, projectName);
@@ -169,26 +226,22 @@ void CallData::addCallExpression(string callName, string callLocation, string de
         int curIndex = call2index[callName] - 1;
         
         // Update the infomation
-        callInfoVec[curIndex].totalCallNumber++;
-        if(callInfoVec[curIndex].callNumber[projectID] == 0)
-            callInfoVec[curIndex].callProject++;
-        callInfoVec[curIndex].callNumber[projectID]++;
-        if(callInfoVec[curIndex].defLocation != defLocation)
+        callInfoVec[curIndex].numCallTotal++;
+        if(callInfoVec[curIndex].numCallInProject[projectID] == 0)
+            callInfoVec[curIndex].numProject++;
+        if(callInfoVec[curIndex].numCallInDomain[domainID] == 0)
+            callInfoVec[curIndex].numDomain++;
+        callInfoVec[curIndex].numCallInProject[projectID]++;
+        callInfoVec[curIndex].numCallInDomain[domainID]++;
+        if(callInfoVec[curIndex].defLocation.find(defLocation) == string::npos){
             callInfoVec[curIndex].multiDef = true;
+            callInfoVec[curIndex].defLocation += "#";
+            callInfoVec[curIndex].defLocation += defLocation;
+        }
     }
     
     // test
     //cout<<callName<<"#"<<call2index[callName]<<"@"<<domainName<<":"<<projectName<<"#"<<projectID<<"\n";
-    return;
-}
-
-// Print all the call infomation
-void CallData::print(){
-    
-    for(int i = 1; i <= totalIndex; i++){
-        cout<<i<<", ";
-        callInfoVec[i-1].print();
-    }
     return;
 }
 
@@ -223,9 +276,10 @@ pair<string, string> CallData::getDomainProjectName(string callLocation){
 }
 
 // Get the project ID
-int CallData::getProjectID(string domainName, string projectName){
+pair<int, int> CallData::getDomainProjectID(string domainName, string projectName){
     
-    int ID = 0;
+    int domID = 0;
+    int projID = 0;
     
     // Get the domain and project name
     vector<string> mDomainName = configData.getDomainName();
@@ -236,30 +290,30 @@ int CallData::getProjectID(string domainName, string projectName){
         
         // The domain is equal to the parameter domainName
         if(domainName.find(mDomainName[i]) != string::npos){
-            
+            domID = i;
             // For each project
             for(unsigned j = 0; j < mProjectName[i].size(); j++){
                 
-                // The domain is equal to the parameter projectName
+                // The project is equal to the projectName
                 if(projectName.find(mProjectName[i][j]) != string::npos){
                     
                     // Add the index of project in current domain
-                    ID += j;
-                    return ID;
+                    projID += j;
+                    return make_pair(domID, projID);
                 }
             }
         }
         else{
             // Add the number of projects in this domain
-            ID += mProjectName[i].size();
+            projID += mProjectName[i].size();
         }
     }
     
     // Fail to find the corresponding domain and project, which is not supposed to happen.
-    return -1;
+    return make_pair(-1, -1);
 }
 
-// Is the defination locates out of the project, aka, is used the third part library
+// Is the definition locates out of the project, aka, is used the third part library
 bool CallData::isOutProjectDef(string defLocation, string domainName, string projectName){
     
     if(defLocation.find("/"+domainName) != string::npos && defLocation.find("/"+projectName) != string::npos){

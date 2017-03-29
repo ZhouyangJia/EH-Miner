@@ -22,7 +22,7 @@
 #include <iostream>
 #include <string.h>
 
-#define MAX_PROJECT 20
+#define MAX_PROJECT 100
 
 using namespace std;
 
@@ -75,28 +75,31 @@ struct CallInfo{
     // Init the members for each instance
     CallInfo();
     
-    // Print the call infomation
-    void print();
+    // Print the call infomation in first 'projectNumber' project
+    void print(int domainNumber, int projectNumber);
     
     // Function name
     string callName;
     
+    // Numbers:
+    // Called domain
+    int numDomain;
+    // Called project
+    int numProject;
     // Total called number
-    int totalCallNumber;
+    int numCallTotal;
+    // Called number in each domain
+    int numCallInDomain[MAX_PROJECT];
+    // Called number in each project
+    int numCallInProject[MAX_PROJECT];
     
-    // Number of projects, which calls the function
-    int callProject;
-    
-    // Called number, for each project
-    int callNumber[MAX_PROJECT];
-    
-    // Defination location of the function
+    // definition location of the function
     string defLocation;
     
     // Is defined in multiple locations, supposed to be false
     bool multiDef;
     
-    // Is the defination locates out of the project, aka, is used the third part library
+    // Is the definition locates out of the project, aka, is used the third part library
     bool outProjectDef;
 };
 
@@ -118,15 +121,18 @@ public:
     
     // Print all the call infomation
     void print();
+    
+    // Get the total number of calls
+    int getTotalNumber();
 
 private:
     // Get the domain and project name from the full path of the file
     pair<string, string> getDomainProjectName(string callLocation);
     
-    // Get the project ID
-    int getProjectID(string domainName, string projectName);
+    // Get the domain ID and project ID
+    pair<int, int> getDomainProjectID(string domainName, string projectName);
     
-    // Is the defination locates out of the project, aka, is used the third part library
+    // Is the definition locates out of the project, aka, is used the third part library
     bool isOutProjectDef(string defLocation, string domainName, string projectName);
     
     // Config data with domain and project names

@@ -36,26 +36,33 @@ void DummyVisitor::travelStmt(Stmt* stmt){
     if(CallExpr* callExpr = dyn_cast<CallExpr>(stmt)){
         if(FunctionDecl* functionDecl = callExpr->getDirectCallee()){
             
-            // Get the name, call location and defination location of the call expression
+            // Get the name, call location and definition location of the call expression
             string name = functionDecl->getNameAsString();
-            FullSourceLoc callstart = CI->getASTContext().getFullLoc(callExpr->getLocStart());
-            FullSourceLoc defstart = CI->getASTContext().getFullLoc(functionDecl->getLocStart());
+            FullSourceLoc callStart = CI->getASTContext().getFullLoc(callExpr->getLocStart());
+            FullSourceLoc defStart = CI->getASTContext().getFullLoc(functionDecl->getLocStart());
             
-            SourceLocation a;
-            
-            if(callstart.isValid() && defstart.isValid()){
-                callstart = callstart.getExpansionLoc();
-                defstart = defstart.getSpellingLoc();
-
-            
+            if(callStart.isValid() && defStart.isValid()){
+                
+                callStart = callStart.getExpansionLoc();
+                defStart = defStart.getSpellingLoc();
+                
+                string callLoc = callStart.printToString(callStart.getManager());
+                string defLoc = defStart.printToString(callStart.getManager());
+                
+                string callFile = callLoc.substr(0, callLoc.find_first_of(':'));
+                string defFile = defLoc.substr(0, defLoc.find_first_of(':'));
+                
+                // The API callStart.printToString(callStart.getManager()) is behaving inconsistently,
+                // more infomation see http://lists.llvm.org/pipermail/cfe-dev/2016-October/051092.html
+                // So, we use makeAbsolutePath.
+                SmallString<128> callFullPath(callFile);
+                CI->getFileManager().makeAbsolutePath(callFullPath);
+                SmallString<128> defFullPath(defFile);
+                CI->getFileManager().makeAbsolutePath(defFullPath);
+                
                 // Store the call information into CallData
                 CallData callData;
-                callData.addCallExpression(name,
-                                           // The API is behaving inconsistently, more infomation see
-                                           // http://lists.llvm.org/pipermail/cfe-dev/2016-October/051092.html
-                                           //callstart.printToString(callstart.getManager()),
-                                           InFile.str(),
-                                           defstart.printToString(defstart.getManager()));
+                callData.addCallExpression(name, callFullPath.str(), defFullPath.str());
             }
         }
     }

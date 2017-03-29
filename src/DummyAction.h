@@ -49,6 +49,8 @@
 #include "clang/Tooling/Tooling.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 
+#include <string.h>
+
 using namespace std;
 using namespace clang::driver;
 using namespace clang::tooling;

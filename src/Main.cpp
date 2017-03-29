@@ -175,9 +175,9 @@ int initConfig(string config_file){
 
 // Please read from the program entrance :)
 int main(int argc, const char **argv){
-    
     CommonOptionsParser OptionsParser(argc, argv, ClangMytoolCategory);
     vector<string> source = OptionsParser.getSourcePathList();
+    llvm::errs()<<"Total "<<source.size()<<" files!\n";
 
     // Set default config path
     if(ConfigFile.empty())
@@ -209,6 +209,6 @@ int main(int argc, const char **argv){
     
     CallData callData;
     callData.print();
-    
+    llvm::errs()<<"Total "<<callData.getTotalNumber()<<" functions!\n";
     return 0;
 }
