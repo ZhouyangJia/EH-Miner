@@ -57,7 +57,7 @@ static cl::extrahelp MoreHelp(
                               "\n"
                               "-find-function-call\n"
                               "\tUsing this option, our tool will perfrom the function-call analyzing\n"
-                              "\taction. At one action should be performed.\n"
+                              "\taction. At least one action should be performed.\n"
                               "\n"
                               "-config-file <config-file> specify the config file containing domains and projects.\n"
                               "\tConfig the domains, and projects for each domain we want to analyze. \n"

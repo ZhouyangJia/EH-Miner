@@ -455,13 +455,13 @@ pair<string, string> CallData::getDomainProjectName(string callLocation){
     for(unsigned i = 0; i < mDomainName.size(); i++){
         
         // The full path contains the domain name
-        if(callLocation.find("/"+mDomainName[i]) != string::npos){
+        if(callLocation.find("/"+mDomainName[i]+"/") != string::npos){
             
             // For each project
             for(unsigned j = 0; j < mProjectName[i].size(); j++){
                 
                 // The full path contains the project name
-                if(callLocation.find("/"+mProjectName[i][j]) != string::npos){
+                if(callLocation.find("/"+mProjectName[i][j]+"/") != string::npos){
                     
                     // Make the pair of doamin name and project name, and return
                     return make_pair(mDomainName[i], mProjectName[i][j]);
@@ -515,7 +515,7 @@ pair<int, int> CallData::getDomainProjectID(string domainName, string projectNam
 // Is the definition locates out of the project, aka, is used the third part library
 bool CallData::isOutProjectDef(string defLocation, string domainName, string projectName){
     
-    if(defLocation.find("/"+domainName) != string::npos && defLocation.find("/"+projectName) != string::npos){
+    if(defLocation.find("/"+domainName+"/") != string::npos && defLocation.find("/"+projectName+"/") != string::npos){
         return false;
     }
     return true;
