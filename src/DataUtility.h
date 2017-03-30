@@ -22,6 +22,10 @@
 #include <iostream>
 #include <string.h>
 
+#ifdef SQLITE
+#include <sqlite3.h>
+#endif
+
 #define MAX_PROJECT 100
 
 using namespace std;
@@ -122,8 +126,8 @@ public:
     // Print all the call infomation
     void print();
     
-    // Get the total number of calls
-    int getTotalNumber();
+    // Set the name of SQLite database
+    void setDatabase(string name);
 
 private:
     // Get the domain and project name from the full path of the file
@@ -146,6 +150,9 @@ private:
     
     // Store all function info, indexed by the integer mapping of function name
     static vector<CallInfo> callInfoVec;
+    
+    // The name of SQLite database
+    static string databaseName;
 };
 
 #endif /* DataUtility_h */

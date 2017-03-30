@@ -24,7 +24,13 @@ target_link_libraries(clang-dummy
   clangStaticAnalyzerFrontend
   clangTooling
   config
+  sqlite3
   )
 
 install(TARGETS clang-dummy
   RUNTIME DESTINATION bin)
+
+OPTION(SQLITE "Use SQLite to store function call infomation instead of memory, please enable this when analyzing tens of thouands of source files." OFF)
+IF(SQLITE)
+    ADD_DEFINITIONS(-DSQLITE)
+ENDIF(SQLITE)

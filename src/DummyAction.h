@@ -50,6 +50,7 @@
 #include "clang/Tooling/CommonOptionsParser.h"
 
 #include <string.h>
+#include <map>
 
 using namespace std;
 using namespace clang::driver;
@@ -102,6 +103,12 @@ public:
     virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, StringRef InFile);
     
 private:
+    // If the tool finds more than one entry in json file for a file, it just runs multiple times,
+    // once per entry. As far as the tool is concerned, two compilations of the same file can be
+    // entirely different due to differences in flags. However, we don't want these to ruin our
+    // statistics. More detials see:
+    // http://eli.thegreenplace.net/2014/05/21/compilation-databases-for-clang-based-tools
+    static map<string, bool> hasAnalyzed;
 };
 
 #endif /* DummyAction_h */

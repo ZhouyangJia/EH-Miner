@@ -129,10 +129,11 @@ ConfigData CallData::configData;
 int CallData::totalIndex;
 map<string, int> CallData::call2index;
 vector<CallInfo> CallData::callInfoVec;
+string CallData::databaseName;
 
-// Get the total number of calls
-int CallData::getTotalNumber(){
-    return totalIndex;
+// Set the name of SQLite database
+void CallData::setDatabase(string name){
+    databaseName = name;
 }
 
 // Print all the call infomation
@@ -141,7 +142,7 @@ void CallData::print(){
     if(totalIndex == 0)
         return;
     
-    cout<<"Call ID, Call Name, Def Location, Is Out Def, Is Multi Def, Num Domain, Num Project, Num Call Total";
+    cout<<"Call ID, Call Name, Def Location, Has Out Def, Is Multi Def, Num Domain, Num Project, Num Call Total";
     
     int domainNumber = 0;
     int projectNumber = 0;
@@ -169,17 +170,60 @@ void CallData::print(){
     return;
 }
 
+#ifdef SQLITE
+// Callback of SQLite
+static int callback(void *data, int argc, char **argv, char **azColName){
+    
+    pair<int, vector<string>>* rowdata = (pair<int, vector<string>>*) data;
+    
+    // Multiple rows have the same function name, which should not happen.
+    if(rowdata->first != 0){
+        fprintf(stderr, "Multiple rows have the same function name\n");
+        return SQLITE_ERROR;
+    }
+    
+    // Print the row
+    //int i;
+    //for(i=0; i<argc; i++){
+    //    printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
+    //}
+    //printf("\n");
+    
+    // Get the values
+    vector<string> values;
+    for(int i = 0; i < argc; i++){
+        string value = argv[i];
+        values.push_back(value);
+    }
+    
+    // Store the ID and values
+    *rowdata = make_pair(atoi(argv[0]), values);
+    return SQLITE_OK;
+}
+#endif
+
 // Add a call expression
 void CallData::addCallExpression(string callName, string callLocation, string defLocation){
     
+    // Get the domain and project name
+    vector<string> mDomainName = configData.getDomainName();
+    vector<vector<string>> mProjectName = configData.getProjectName();
+
     // Get the domain name and project name of given path
     pair<string, string> mDomProName = getDomainProjectName(callLocation);
     string domainName = mDomProName.first;
     string projectName = mDomProName.second;
     if(domainName.empty() || projectName.empty()){
-        cerr<<"Cannot find domain or project name for "<<callName<<":\n";
-        cerr<<"\tcall@"<<callLocation<<"&"<<"def@"<<defLocation<<".\n";
-        return;
+        // Try to get the names from defLocation
+        mDomProName = getDomainProjectName(defLocation);
+        domainName = mDomProName.first;
+        projectName = mDomProName.second;
+        
+        if(domainName.empty() || projectName.empty()){
+            cerr<<"Cannot find domain or project name for "<<callName<<":\n";
+            cerr<<"\tcall@"<<callLocation<<"&"<<"def@"<<defLocation<<".\n";
+            return;
+        }
     }
     
     // Get the domain ID and project ID of given path
@@ -191,7 +235,7 @@ void CallData::addCallExpression(string callName, string callLocation, string de
         return;
     }
     if(domainID >= MAX_PROJECT || projectID >= MAX_PROJECT){
-        cerr<<"Exceed the project limitation!\n";
+        cerr<<"Exceed the project limitation: "<<MAX_PROJECT<<".\n";
         return;
     }
     
@@ -206,11 +250,9 @@ void CallData::addCallExpression(string callName, string callLocation, string de
         CallInfo callInfo;
         
         callInfo.callName = callName;
+        callInfo.numProject++;
+        callInfo.numDomain++;
         callInfo.numCallTotal++;
-        if(callInfo.numCallInProject[projectID] == 0)
-            callInfo.numProject++;
-        if(callInfo.numCallInDomain[domainID] == 0)
-            callInfo.numDomain++;
         callInfo.numCallInProject[projectID]++;
         callInfo.numCallInDomain[domainID]++;
         callInfo.defLocation = defLocation;
@@ -238,10 +280,167 @@ void CallData::addCallExpression(string callName, string callLocation, string de
             callInfoVec[curIndex].defLocation += "#";
             callInfoVec[curIndex].defLocation += defLocation;
         }
+        if(isOutProjectDef(defLocation, domainName, projectName))
+            callInfoVec[curIndex].outProjectDef = true;
     }
     
-    // test
-    //cout<<callName<<"#"<<call2index[callName]<<"@"<<domainName<<":"<<projectName<<"#"<<projectID<<"\n";
+    
+#ifdef SQLITE
+    // If compile the tool with option -DSQLITE=ON, we can use database to store the data,
+    // of which name is specified by -database-file=<database_file_name>.
+    if(databaseName.empty())
+        return;
+    
+    // Init and open database
+    sqlite3 *db;
+    char *zErrMsg = 0;
+    int rc;
+    rc = sqlite3_open(databaseName.c_str(), &db);
+    if(rc){
+        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+    
+    // Prepare the sql stmt to create the table
+    string stmt = "create table if not exists function_info (\
+    ID integer primary key autoincrement, \
+    CallName text, DefLoc text, HasOutDef integer, IsMulDef integer, \
+    NumDomain integer, NumProject integer, NumCallTotal integer";
+    for(unsigned i = 0; i < mDomainName.size(); i++){
+        stmt+=", " + mDomainName[i] + " integer";
+    }
+    for(unsigned i = 0; i < mDomainName.size(); i++){
+        for(unsigned j = 0; j < mProjectName[i].size(); j++){
+            stmt+=", " + mProjectName[i][j] + " integer";
+        }
+    }
+    stmt+=")";
+    rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
+    if(rc!=SQLITE_OK){
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+    }
+    
+    // Check whether the function is called the first time
+    int ID = 0;
+    vector<string> values;
+    values.clear();
+    // Store ID and values for the certain row
+    pair<int, vector<string>> rowdata = make_pair(ID, values);
+    stmt="select * from function_info where CallName = '" + callName + "'";
+    rc = sqlite3_exec(db, stmt.c_str(), callback, &rowdata, &zErrMsg);
+    if(rc!=SQLITE_OK){
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+    }
+    
+    // The function is called the first time
+    if(rowdata.first == 0){
+        
+        // Prepare the sql stmt to insert new entry
+        stmt = "insert into function_info (CallName, DefLoc, HasOutDef, IsMulDef, NumDomain, NumProject, NumCallTotal";
+        for(unsigned i = 0; i < mDomainName.size(); i++){
+            stmt+=", " + mDomainName[i];
+        }
+        for(unsigned i = 0; i < mDomainName.size(); i++){
+            for(unsigned j = 0; j < mProjectName[i].size(); j++){
+                stmt+=", " + mProjectName[i][j];
+            }
+        }
+        string isOutDef;
+        if(isOutProjectDef(defLocation, domainName, projectName))
+            isOutDef = "1";
+        else
+            isOutDef = "0";
+        stmt+= ") values ('" + callName + "', '" + defLocation + "', " + isOutDef + ", 0, 1, 1, 1";
+        for(unsigned i = 0; i < mDomainName.size(); i++){
+            if(domainName.find(mDomainName[i]) != string::npos)
+                stmt+=", 1";
+            else
+                stmt+=", 0";
+        }
+        for(unsigned i = 0; i < mDomainName.size(); i++){
+            for(unsigned j = 0; j < mProjectName[i].size(); j++){
+                if(projectName.find(mProjectName[i][j]) != string::npos)
+                    stmt+=", 1";
+                else
+                    stmt+=", 0";
+            }
+        }
+        stmt+=")";
+        rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
+        if(rc!=SQLITE_OK){
+            fprintf(stderr, "SQL error: %s\n", zErrMsg);
+            sqlite3_free(zErrMsg);
+        }
+    }
+    else{
+        //for(unsigned i = 0; i < rowdata.second.size(); i++){
+        //    cout<<rowdata.second[i]<<endl;
+        //}
+        
+        // Prepare the sql stmt to update the entry
+        //get old value
+        string defloc = rowdata.second[2];
+        string outdef = rowdata.second[3];
+        string multidef = rowdata.second[4];
+        int numdomain =  atoi(rowdata.second[5].c_str());
+        int numproject =  atoi(rowdata.second[6].c_str());
+        int numcalltotal = atoi(rowdata.second[7].c_str());
+        int numcurdomain = atoi(rowdata.second[8+domainID].c_str());
+        int numcurproject = atoi(rowdata.second[8+mDomainName.size()+projectID].c_str());
+        //get new value
+        if(isOutProjectDef(defLocation, domainName, projectName))
+            outdef = "1";
+        if(defloc.find(defLocation) == string::npos){
+            multidef = "1";
+            defloc += "#" + defLocation;
+        }
+        if(numcurdomain == 0)
+            numdomain++;
+        if(numcurproject == 0)
+            numproject++;
+        numcalltotal++;
+        numcurdomain++;
+        numcurproject++;
+        //convert from int to char*
+        char numdomainStr[10];
+        char numprojectStr[10];
+        char numcalltotalStr[10];
+        char numcurdomainStr[10];
+        char numcurprojectStr[10];
+        sprintf(numdomainStr, "%d", numdomain);
+        sprintf(numprojectStr, "%d", numproject);
+        sprintf(numcalltotalStr, "%d", numcalltotal);
+        sprintf(numcurdomainStr, "%d", numcurdomain);
+        sprintf(numcurprojectStr, "%d", numcurproject);
+        //get index of domain and project in mDomainName and mProjectName
+        int domainindex = domainID;
+        int projectindex = 0;
+        for(unsigned i = 0; i < mProjectName[domainindex].size(); i++){
+            if(mProjectName[domainindex][i] == projectName){
+                projectindex = i;
+                break;
+            }
+        }
+        //combine whole sql statement
+        stmt = "update function_info set DefLoc = '" + defloc + "', HasOutDef = " + outdef + ", IsMulDef = " + multidef + \
+                ", NumDomain = " + numdomainStr + ", NumProject = " + numprojectStr + ", NumCallTotal = " + numcalltotalStr + \
+                ", " + mDomainName[domainindex] + " = " + numcurdomainStr + ", " + mProjectName[domainindex][projectindex] + " = " + \
+                numcurprojectStr + " where CallName = '" + callName + "'";
+        //execute the update stmt
+        rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
+        if(rc!=SQLITE_OK){
+            fprintf(stderr, "SQL error: %s\n", zErrMsg);
+            sqlite3_free(zErrMsg);
+        }
+    }
+    
+    // Close the database
+    sqlite3_close(db);
+#endif
+  
     return;
 }
 
@@ -289,13 +488,13 @@ pair<int, int> CallData::getDomainProjectID(string domainName, string projectNam
     for(unsigned i = 0; i < mDomainName.size(); i++){
         
         // The domain is equal to the parameter domainName
-        if(domainName.find(mDomainName[i]) != string::npos){
+        if(domainName == mDomainName[i]){
             domID = i;
             // For each project
             for(unsigned j = 0; j < mProjectName[i].size(); j++){
                 
                 // The project is equal to the projectName
-                if(projectName.find(mProjectName[i][j]) != string::npos){
+                if(projectName == mProjectName[i][j]){
                     
                     // Add the index of project in current domain
                     projID += j;
