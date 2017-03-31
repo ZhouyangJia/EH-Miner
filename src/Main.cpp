@@ -80,7 +80,7 @@ static cl::extrahelp MoreHelp(
                               "\t  find . -name \"*.c\" -o -name \"*.cc\" -o -name \"*.cpp\"\n"
                               "\n"
                               "-database-file <database-file> specify the database (absolute path).\n"
-                              "\tIf we do need to invode the tool several times, then we need to store\n"
+                              "\tIf we do want to invoke the tool several times, then we need to store\n"
                               "\tthe data to database instead of memory. If the database file doesn't \n"
                               "\texist, the tool will create one. To use this feature, please complie \n"
                               "\tour tool with option -DSQLITE=ON, and use:\n"

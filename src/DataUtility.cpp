@@ -308,14 +308,26 @@ void CallData::addCallExpression(string callName, string callLocation, string de
     CallName text, DefLoc text, HasOutDef integer, IsMulDef integer, \
     NumDomain integer, NumProject integer, NumCallTotal integer";
     for(unsigned i = 0; i < mDomainName.size(); i++){
+        mDomainName[i] = mDomainName[i].substr(0, mDomainName[i].find_first_of('-'));
+        mDomainName[i] = mDomainName[i].substr(0, mDomainName[i].find_first_of('.'));
         stmt+=", " + mDomainName[i] + " integer";
     }
     for(unsigned i = 0; i < mDomainName.size(); i++){
         for(unsigned j = 0; j < mProjectName[i].size(); j++){
+            mProjectName[i][j] = mProjectName[i][j].substr(0, mProjectName[i][j].find_first_of('-'));
+            mProjectName[i][j] = mProjectName[i][j].substr(0, mProjectName[i][j].find_first_of('.'));
             stmt+=", " + mProjectName[i][j] + " integer";
         }
     }
     stmt+=")";
+    string::size_type pos=0;
+    string::size_type a=1;
+    string::size_type b=1;
+    while((pos=stmt.find("-",pos))!=string::npos){
+        stmt.replace(pos,a,"_");
+        pos+=b;
+    }
+    
     rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
     if(rc!=SQLITE_OK){
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
