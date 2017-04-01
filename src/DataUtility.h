@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-
 #ifndef DataUtility_h
 #define DataUtility_h
 
@@ -22,9 +21,7 @@
 #include <iostream>
 #include <string.h>
 
-#ifdef SQLITE
 #include <sqlite3.h>
-#endif
 
 #define MAX_PROJECT 100
 
@@ -64,20 +61,20 @@ private:
     static vector<vector<string>> projectName;
 };
 
+//===----------------------------------------------------------------------===//
+//
+//                     FunctionCallInfo Struct
+//
+//===----------------------------------------------------------------------===//
+// In this struct, we store all the needed information for each function call
+// in all projects. Each instance handles one function, including the function
+// name, call times, def and use location, etc.
+//===----------------------------------------------------------------------===//
 
-//===----------------------------------------------------------------------===//
-//
-//                     CallInfo Struct
-//
-//===----------------------------------------------------------------------===//
-// In this struct, we store all the needed information for all the functions
-// called in all projects. Each instance handles one function, including the
-// function name, call times, def and use location, etc.
-//===----------------------------------------------------------------------===//
-struct CallInfo{
+struct FunctionCallInfo{
     
     // Init the members for each instance
-    CallInfo();
+    FunctionCallInfo();
     
     // Print the call infomation in first 'projectNumber' project
     void print(int domainNumber, int projectNumber);
@@ -110,21 +107,43 @@ struct CallInfo{
 
 //===----------------------------------------------------------------------===//
 //
+//                     PostbranchCallInfo Struct
+//
+//===----------------------------------------------------------------------===//
+// In this struct, we store all the needed information for each post-branch call
+// in all projects. Each instance handles one function, including the function
+// name, domain and project names, post-branch call times, etc.
+//===----------------------------------------------------------------------===//
+
+struct PostbranchCallInfo{
+    
+    //TODO
+    
+};
+
+//===----------------------------------------------------------------------===//
+//
 //                     CallData Class
 //
 //===----------------------------------------------------------------------===//
-// This class is designed to store the call infomation of all functions. Since
-// each FroentAction instance may have fucntion calls to store, all the members
-// are static so that they will be shared by all FroentAction instances.
+// This class is designed to deal with the data of function and post-brance calls.
+// Since each FroentAction instance may have fucntion calls to store, all the
+// members are static so that they will be shared by all FroentAction instances.
 //===----------------------------------------------------------------------===//
 
 class CallData{
 public:
-    // Add a call expression
-    void addCallExpression(string callName, string callLocation, string defLocation);
+    // Add a function call
+    void addFunctionCall(string callName, string callLocation, string defLocation);
     
-    // Print all the call infomation
-    void print();
+    // Add a post-branch call
+    void addPostbranchCall(string callName, string logName, string callLocation);
+    
+    // Print all function call infomation
+    void printFunctionCall();
+    
+    // Print all post-branch call infomation
+    void printPostbranchCall();
     
     // Set the name of SQLite database
     void setDatabase(string name);
@@ -142,14 +161,13 @@ private:
     // Config data with domain and project names
     static ConfigData configData;
     
+    // Used for record function call information
     // Mapping the function name and an integer index
     static map<string, int> call2index;
-    
     // For every new function, this variable will increase by 1, and assigned to the mapping.
     static int totalIndex;
-    
     // Store all function info, indexed by the integer mapping of function name
-    static vector<CallInfo> callInfoVec;
+    static vector<FunctionCallInfo> functionCallInfoVec;
     
     // The name of SQLite database
     static string databaseName;

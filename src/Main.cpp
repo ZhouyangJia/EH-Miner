@@ -12,14 +12,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Option/OptTable.h"
 #include "clang/Tooling/Tooling.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Driver/Options.h"
 
-#include "DummyAction.h"
+#include "FindFunctionCall.h"
+#include "FindPostbranchCall.h"
 #include "DataUtility.h"
 
 #include "libconfig.h"
@@ -56,7 +56,11 @@ static cl::extrahelp MoreHelp(
                               "\trules described above.\n"
                               "\n"
                               "-find-function-call\n"
-                              "\tUsing this option, our tool will perfrom the function-call analyzing\n"
+                              "\tUsing this option, our tool will perfrom the find function call\n"
+                              "\taction. At least one action should be performed.\n"
+                              "\n"
+                              "-find-postbranch-call\n"
+                              "\tUsing this option, our tool will perfrom the find postbranch call\n"
                               "\taction. At least one action should be performed.\n"
                               "\n"
                               "-config-file <config-file> specify the config file containing domains and projects.\n"
@@ -106,7 +110,11 @@ static std::unique_ptr<opt::OptTable> Options(createDriverOptTable());
 
 static cl::opt<bool> FindFunctionCall("find-function-call",
                                          cl::desc("Find function calls."),
-                                         cl::cat(ClangMytoolCategory));
+                                      cl::cat(ClangMytoolCategory));
+
+static cl::opt<bool> FindPostbranchCall("find-postbranch-call",
+                                      cl::desc("Find post-branch calls."),
+                                      cl::cat(ClangMytoolCategory));
 
 static cl::opt<string> ConfigFile("config-file",
                                       cl::desc("Specify config file."),
@@ -256,24 +264,20 @@ int main(int argc, const char **argv){
     }
     
     if(!DatabaseFile.empty()){
-#ifndef SQLITE
-        errs()<<"The compile option SQLITE is OFF, so the -database-file option will be ignored!\n";
-        DatabaseFile = "";
-#else
         CallData callData;
         callData.setDatabase(DatabaseFile);
-#endif
     }
     
-    if(!FindFunctionCall){
-        errs()<<"Please specify the action to do (e.g., -find-function-call)!\n";
+    if(!FindFunctionCall && !FindPostbranchCall){
+        errs()<<"Please specify the action to do (e.g., -find-function-call, or -find-postbranch-call)!\n";
         exit(1);
     }
     
     // Start analyzing
     std::unique_ptr<FrontendActionFactory> FrontendFactory;
+    
     if(FindFunctionCall){
-        FrontendFactory = newFrontendActionFactory<DummyAction>();
+        FrontendFactory = newFrontendActionFactory<FindFunctionCallAction>();
         
         // We analyze the source files one by one, since something weird happens when analyzing at once.
         // More details see http://lists.llvm.org/pipermail/cfe-dev/2015-April/042654.html
@@ -283,7 +287,23 @@ int main(int argc, const char **argv){
             time_t now_time = time(NULL);
             struct tm* current_time = localtime(&now_time);
             llvm::errs()<<current_time->tm_hour<<":"<<current_time->tm_min<<":"<<current_time->tm_sec<<" ";
-            llvm::errs()<<"["<<i+1<<"/"<<source.size()<<"]"<<" Now analyze the file: "<<mysource[0]<<"\n";
+            llvm::errs()<<"["<<i+1<<"/"<<source.size()<<"]"<<" Find function call in: "<<mysource[0]<<"\n";
+            ClangTool Tool(OptionsParser.getCompilations(), mysource);
+            Tool.setDiagnosticConsumer(new IgnoringDiagConsumer());
+            Tool.run(FrontendFactory.get());
+        }
+    }
+    
+    if(FindPostbranchCall){
+        FrontendFactory = newFrontendActionFactory<FindPostbranchCallAction>();
+        
+        for(unsigned i = 0; i < source.size(); i++){
+            vector<string> mysource;
+            mysource.push_back(source[i]);
+            time_t now_time = time(NULL);
+            struct tm* current_time = localtime(&now_time);
+            llvm::errs()<<current_time->tm_hour<<":"<<current_time->tm_min<<":"<<current_time->tm_sec<<" ";
+            llvm::errs()<<"["<<i+1<<"/"<<source.size()<<"]"<<" Find Post-branch call in "<<mysource[0]<<"\n";
             ClangTool Tool(OptionsParser.getCompilations(), mysource);
             Tool.setDiagnosticConsumer(new IgnoringDiagConsumer());
             Tool.run(FrontendFactory.get());
@@ -291,10 +311,14 @@ int main(int argc, const char **argv){
     }
     
     // Print the result only when not using database
-    if(DatabaseFile.empty()){
+    if(FindFunctionCall && DatabaseFile.empty()){
         CallData callData;
-        callData.print();
+        callData.printFunctionCall();
     }
     
+    if(FindPostbranchCall && DatabaseFile.empty()){
+        CallData callData;
+        callData.printPostbranchCall();
+    }
     return 0;
 }

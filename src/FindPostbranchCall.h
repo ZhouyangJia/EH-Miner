@@ -1,4 +1,4 @@
-//===- DummyAction.h - A dummy frontend action outputting function calls-===//
+//===- FindPostbranchCall.h - A frontend action outputting post-branch calls -===//
 //
 //                     Cross Project Checking
 //
@@ -8,15 +8,23 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements a dummy frontend action to output function calls.
+// This file implements a frontend action to output function calls which are
+// called after checking by a branch statement.
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef FindPostbranchCall_h
+#define FindPostbranchCall_h
 
-#ifndef DummyAction_h
-#define DummyAction_h
+#include <map>
+#include <vector>
+#include <string>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <stdio.h>
 
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Host.h"
@@ -49,9 +57,6 @@
 #include "clang/Tooling/Tooling.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 
-#include <string.h>
-#include <map>
-
 using namespace std;
 using namespace clang::driver;
 using namespace clang::tooling;
@@ -60,7 +65,7 @@ using namespace clang;
 
 //===----------------------------------------------------------------------===//
 //
-//            DummyAction, DummyConsumer and DummyVisitor Classes
+// FindPostbranchCallAction, FindPostbranchCallConsumer and FindPostbranchCallVisitor
 //
 //===----------------------------------------------------------------------===//
 // These three classes work in tandem to prefrom the frontend analysis, if you
@@ -68,40 +73,46 @@ using namespace clang;
 //      http://clang.llvm.org/docs/RAVFrontendAction.html
 //===----------------------------------------------------------------------===//
 
-class DummyVisitor : public RecursiveASTVisitor <DummyVisitor> {
+class FindPostbranchCallVisitor : public RecursiveASTVisitor <FindPostbranchCallVisitor> {
 public:
-    explicit DummyVisitor(CompilerInstance* CI, StringRef InFile) : CI(CI), InFile(InFile){};
-
-    // Trave the statement and find call expression
-    bool VisitFunctionDecl (FunctionDecl*);
-
-    // Visit the function declaration and travel the function body
-    void travelStmt(Stmt*);
+    explicit FindPostbranchCallVisitor(CompilerInstance* CI, StringRef InFile) : CI(CI), InFile(InFile){};
     
+    // Visit the function declaration and travel the function body
+    bool VisitFunctionDecl (FunctionDecl* functionDecl);
+    
+    // Trave the statement and find post-brance call
+    void travelStmt(Stmt* stmt, Stmt* father);
+
 private:
+    // Record call-log pair
+    void recordCallLog(CallExpr *callExpr, CallExpr *logExpr);
+        
+    // Search call site in given stmt
+    CallExpr* searchCall(Stmt* stmt, CallExpr* callExpr);
+    
+    // Get the source code of given stmt
+    StringRef expr2str(Stmt* stmt);
+    
     CompilerInstance* CI;
     StringRef InFile;
+    
 };
 
-
-class DummyConsumer : public ASTConsumer {
+class FindPostbranchCallConsumer : public ASTConsumer {
 public:
-    explicit DummyConsumer(CompilerInstance* CI, StringRef InFile) : Visitor(CI, InFile){}
+    explicit FindPostbranchCallConsumer(CompilerInstance* CI, StringRef InFile) : Visitor(CI, InFile){}
     
     // Handle the translation unit and visit each function declaration
     virtual void HandleTranslationUnit (clang::ASTContext &Context);
     
 private:
-    DummyVisitor Visitor;
+    FindPostbranchCallVisitor Visitor;
     StringRef InFile;
 };
 
-
-class DummyAction : public ASTFrontendAction {
+class FindPostbranchCallAction : public ASTFrontendAction {
 public:
-    // Creat DummyConsuer instance and return to ActionFactory
     virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, StringRef InFile);
-    
 private:
     // If the tool finds more than one entry in json file for a file, it just runs multiple times,
     // once per entry. As far as the tool is concerned, two compilations of the same file can be
@@ -111,4 +122,4 @@ private:
     static map<string, bool> hasAnalyzed;
 };
 
-#endif /* DummyAction_h */
+#endif /* FindPostbranchCall_h */

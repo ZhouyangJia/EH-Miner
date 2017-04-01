@@ -1,4 +1,4 @@
-//===- DummyAction.cpp - A dummy frontend action outputting function calls-===//
+//===-  FindFunctionCall.cpp - A frontend action outputting function calls-===//
 //
 //                     Cross Project Checking
 //
@@ -8,17 +8,17 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements a dummy frontend action to output function calls.
+// This file implements a frontend action to output function calls.
 //
 //===----------------------------------------------------------------------===//
 
 
-#include "DummyAction.h"
+#include "FindFunctionCall.h"
 #include "DataUtility.h"
 
 //===----------------------------------------------------------------------===//
 //
-//            DummyAction, DummyConsumer and DummyVisitor Classes
+// FindFunctionCallAction, FindFunctionCallConsumer and FindFunctionCallVisitor
 //
 //===----------------------------------------------------------------------===//
 // These three classes work in tandem to prefrom the frontend analysis, if you
@@ -26,8 +26,8 @@
 //      http://clang.llvm.org/docs/RAVFrontendAction.html
 //===----------------------------------------------------------------------===//
 
-// Trave the statement and find call expression
-void DummyVisitor::travelStmt(Stmt* stmt){
+// Trave the statement and find function call
+void FindFunctionCallVisitor::travelStmt(Stmt* stmt){
     
     if(!stmt)
         return;
@@ -62,7 +62,7 @@ void DummyVisitor::travelStmt(Stmt* stmt){
                 
                 // Store the call information into CallData
                 CallData callData;
-                callData.addCallExpression(name, callFullPath.str(), defFullPath.str());
+                callData.addFunctionCall(name, callFullPath.str(), defFullPath.str());
             }
         }
     }
@@ -75,16 +75,14 @@ void DummyVisitor::travelStmt(Stmt* stmt){
 }
 
 // Visit the function declaration and travel the function body
-bool DummyVisitor::VisitFunctionDecl(FunctionDecl* Declaration) {
+bool FindFunctionCallVisitor::VisitFunctionDecl(FunctionDecl* Declaration) {
+    
     if(!(Declaration->isThisDeclarationADefinition() && Declaration->hasBody()))
         return true;
     
     FullSourceLoc functionstart = CI->getASTContext().getFullLoc(Declaration->getLocStart()).getExpansionLoc();
-    //FullSourceLoc functionend = CI->getASTContext().getFullLoc(Declaration->getLocEnd()).getExpansionLoc();
-    
     if(!functionstart.isValid())
         return true;
-    
     if(functionstart.getFileID() != CI->getSourceManager().getMainFileID())
         return true;
     
@@ -98,7 +96,7 @@ bool DummyVisitor::VisitFunctionDecl(FunctionDecl* Declaration) {
 }
 
 // Handle the translation unit and visit each function declaration
-void DummyConsumer::HandleTranslationUnit(ASTContext& Context) {
+void FindFunctionCallConsumer::HandleTranslationUnit(ASTContext& Context) {
     Visitor.TraverseDecl(Context.getTranslationUnitDecl());
     return;
 }
@@ -108,13 +106,13 @@ void DummyConsumer::HandleTranslationUnit(ASTContext& Context) {
 // entirely different due to differences in flags. However, we don't want to see these ruining
 // our statistics. More detials see:
 // http://eli.thegreenplace.net/2014/05/21/compilation-databases-for-clang-based-tools
-map<string, bool> DummyAction::hasAnalyzed;
+map<string, bool> FindFunctionCallAction::hasAnalyzed;
 
-// Creat DummyConsuer instance and return to ActionFactory
-std::unique_ptr<ASTConsumer> DummyAction::CreateASTConsumer(CompilerInstance& Compiler, StringRef InFile) {
+// Creat FindFunctionCallConsuer instance and return to ActionFactory
+std::unique_ptr<ASTConsumer> FindFunctionCallAction::CreateASTConsumer(CompilerInstance& Compiler, StringRef InFile) {
     if(hasAnalyzed[InFile] == 0){
         hasAnalyzed[InFile] = 1 ;
-        return std::unique_ptr<ASTConsumer>(new DummyConsumer(&Compiler, InFile));
+        return std::unique_ptr<ASTConsumer>(new FindFunctionCallConsumer(&Compiler, InFile));
     }
     else{
         return nullptr;
