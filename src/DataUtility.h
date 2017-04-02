@@ -161,7 +161,7 @@ private:
     // Config data with domain and project names
     static ConfigData configData;
     
-    // Used for record function call information
+    // Used for recording function call information
     // Mapping the function name and an integer index
     static map<string, int> call2index;
     // For every new function, this variable will increase by 1, and assigned to the mapping.

@@ -303,7 +303,7 @@ int main(int argc, const char **argv){
             time_t now_time = time(NULL);
             struct tm* current_time = localtime(&now_time);
             llvm::errs()<<current_time->tm_hour<<":"<<current_time->tm_min<<":"<<current_time->tm_sec<<" ";
-            llvm::errs()<<"["<<i+1<<"/"<<source.size()<<"]"<<" Find Post-branch call in "<<mysource[0]<<"\n";
+            llvm::errs()<<"["<<i+1<<"/"<<source.size()<<"]"<<" Find post-branch call in "<<mysource[0]<<"\n";
             ClangTool Tool(OptionsParser.getCompilations(), mysource);
             Tool.setDiagnosticConsumer(new IgnoringDiagConsumer());
             Tool.run(FrontendFactory.get());

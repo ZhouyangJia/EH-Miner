@@ -87,11 +87,18 @@ private:
     // Record call-log pair
     void recordCallLog(CallExpr *callExpr, CallExpr *logExpr);
         
-    // Search call site in given stmt
-    CallExpr* searchCall(Stmt* stmt, CallExpr* callExpr);
+    // Search pre-branch call site in given stmt
+    CallExpr* searchPreBranchCall(Stmt* stmt);
+    // Search post-branch call site in given stmt
+    void searchPostBranchCall(Stmt* stmt, CallExpr* callExpr);
+    // Search deeper-branch call site in given stmt
+    void searchDeeperCall(Stmt* stmt, CallExpr* callExpr);
     
     // Get the source code of given stmt
     StringRef expr2str(Stmt* stmt);
+    
+    // Check whether the log has been recorded or not
+    map<CallExpr*, bool> hasRecorded;
     
     CompilerInstance* CI;
     StringRef InFile;

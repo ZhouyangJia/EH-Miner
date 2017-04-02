@@ -172,8 +172,15 @@ void CallData::printFunctionCall(){
     return;
 }
 
-// Callback function for SQLite
-static int callback(void *data, int argc, char **argv, char **azColName){
+// Callback function to get the NumProjectCall in table function_info
+static int cb_search_numcall(void *num, int argc, char **argv, char **azColName){
+    char* numcall = (char*) num;
+    strcpy(numcall, argv[0]);
+    return SQLITE_OK;
+}
+
+// Callback function to get the selected data in  SQLite
+static int cb_get_info(void *data, int argc, char **argv, char **azColName){
     
     pair<int, vector<string>>* rowdata = (pair<int, vector<string>>*) data;
     
@@ -250,7 +257,7 @@ void CallData::addPostbranchCall(string callName, string logName, string callLoc
     // Prepare the sql stmt to create the table
     string stmt = "create table if not exists postbranch_info (\
     ID integer primary key autoincrement, LogName text, DomainName text, ProjectName text, PrebranchCall text, \
-    NumPrebranchCall integer, NumPostbranchCall integer)";
+    NumPrebranchCall integer, NumPostbranchCall integer, NumProjectCall integer)";
     rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
     if(rc!=SQLITE_OK){
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
@@ -264,7 +271,7 @@ void CallData::addPostbranchCall(string callName, string logName, string callLoc
     // Store ID and values for the certain row
     pair<int, vector<string>> rowdata = make_pair(ID, values);
     stmt="select * from postbranch_info where LogName = '" + logName + "'and DomainName = '" + domainName + "'and ProjectName = '" + projectName + "'";
-    rc = sqlite3_exec(db, stmt.c_str(), callback, &rowdata, &zErrMsg);
+    rc = sqlite3_exec(db, stmt.c_str(), cb_get_info, &rowdata, &zErrMsg);
     if(rc!=SQLITE_OK){
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
@@ -273,9 +280,18 @@ void CallData::addPostbranchCall(string callName, string logName, string callLoc
     // The function is called the first time
     if(rowdata.first == 0){
         
+        // Get the NumProjectCall in function_info table
+        char numProjectCallStr[10] = "0";
+        stmt = "select " + projectName + " from function_info where CallName = '" + logName + "'";
+        rc = sqlite3_exec(db, stmt.c_str(), cb_search_numcall, &numProjectCallStr, &zErrMsg);
+        if(rc!=SQLITE_OK){
+            fprintf(stderr, "SQL error: %s\n", zErrMsg);
+            sqlite3_free(zErrMsg);
+        }
+        
         // Prepare the sql stmt to insert new entry
         stmt = "insert into postbranch_info (LogName, DomainName, ProjectName, PrebranchCall, \
-        NumPrebranchCall, NumPostbranchCall) values ('" + logName + "', '" + domainName + "', '" + projectName + "', '#" + callName + "#', 1, 1)";
+        NumPrebranchCall, NumPostbranchCall, NumProjectCall) values ('" + logName + "', '" + domainName + "', '" + projectName + "', '#" + callName + "#', 1, 1, " + numProjectCallStr + ")";
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
@@ -452,7 +468,7 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
     // Store ID and values for the certain row
     pair<int, vector<string>> rowdata = make_pair(ID, values);
     stmt="select * from function_info where CallName = '" + callName + "'";
-    rc = sqlite3_exec(db, stmt.c_str(), callback, &rowdata, &zErrMsg);
+    rc = sqlite3_exec(db, stmt.c_str(), cb_get_info, &rowdata, &zErrMsg);
     if(rc!=SQLITE_OK){
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);

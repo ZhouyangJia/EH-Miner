@@ -24,6 +24,11 @@ void FindPostbranchCallVisitor::recordCallLog(CallExpr *callExpr, CallExpr *logE
     if(!callExpr->getDirectCallee() || !logExpr->getDirectCallee())
         return;
     
+    if(hasRecorded[logExpr] != false){
+        return;
+    }
+    hasRecorded[logExpr] = true;
+    
     FunctionDecl* callDecl = callExpr->getDirectCallee();
     FunctionDecl* logDecl = logExpr->getDirectCallee();
 
@@ -62,22 +67,68 @@ StringRef FindPostbranchCallVisitor::expr2str(Stmt *s){
     return Lexer::getSourceText(CharSourceRange::getTokenRange(sr), CI->getSourceManager(), LangOptions(), 0);
 }
 
-// Search call site in given stmt and invoke the recordCallLog method
-CallExpr* FindPostbranchCallVisitor::searchCall(Stmt *stmt, CallExpr* callExpr){
+// Search deeper-branch call site in given stmt and invoke the recordCallLog method
+void FindPostbranchCallVisitor::searchDeeperCall(Stmt *stmt, CallExpr* callExpr){
+    
+    if(!stmt || !callExpr)
+        return;
+    
+    if(CallExpr *call = dyn_cast<CallExpr>(stmt))
+        recordCallLog(callExpr, call);
+    
+    // We don't search for the 3rd level of nested if stmt any more
+    if(dyn_cast<IfStmt>(stmt) || dyn_cast<SwitchStmt>(stmt))
+        return;
+    
+    if(dyn_cast<WhileStmt>(stmt) || dyn_cast<ForStmt>(stmt))
+        return;
+        
+    for(Stmt::child_iterator it = stmt->child_begin(); it != stmt->child_end(); ++it){
+        if(Stmt *child = *it)
+            searchPostBranchCall(child, callExpr);
+    }
+    
+    return;
+}
+
+// Search post-branch call site in given stmt and invoke the recordCallLog method
+void FindPostbranchCallVisitor::searchPostBranchCall(Stmt *stmt, CallExpr* callExpr){
+    
+    if(!stmt || !callExpr)
+        return;
+    
+    if(CallExpr *call = dyn_cast<CallExpr>(stmt))
+            recordCallLog(callExpr, call);
+    
+    if(dyn_cast<IfStmt>(stmt) || dyn_cast<SwitchStmt>(stmt)){
+        return;
+        // Search for the 2nd level of nested if stmt
+        //searchDeeperCall(stmt, callExpr);
+    }
+    
+    if(dyn_cast<WhileStmt>(stmt) || dyn_cast<ForStmt>(stmt))
+        return;
+    
+    for(Stmt::child_iterator it = stmt->child_begin(); it != stmt->child_end(); ++it){
+        if(Stmt *child = *it)
+            searchPostBranchCall(child, callExpr);
+    }
+    
+    return;
+}
+
+// Search pre-branch call site in given stmt and invoke the recordCallLog method
+CallExpr* FindPostbranchCallVisitor::searchPreBranchCall(Stmt *stmt){
     
     if(!stmt)
         return 0;
     
-    if(CallExpr *call = dyn_cast<CallExpr>(stmt)){
-        if(callExpr != nullptr)
-            recordCallLog(callExpr, call);
-        else
+    if(CallExpr *call = dyn_cast<CallExpr>(stmt))
             return call;
-    }
     
     for(Stmt::child_iterator it = stmt->child_begin(); it != stmt->child_end(); ++it){
         if(Stmt *child = *it){
-            CallExpr *ret = searchCall(child, callExpr);
+            CallExpr *ret = searchPreBranchCall(child);
             if(ret)
                 return ret;
         }
@@ -102,10 +153,10 @@ void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
     if(IfStmt *ifStmt = dyn_cast<IfStmt>(father)){
         if(ifStmt->getCond() == stmt){
             // Search for call in if condexpr
-            if(CallExpr* callExpr = searchCall(stmt, nullptr)){
+            if(CallExpr* callExpr = searchPreBranchCall(stmt)){
                 // Search for log in both 'then body' and 'else body'
-                searchCall(ifStmt->getThen(), callExpr);
-                searchCall(ifStmt->getElse(), callExpr);
+                searchPostBranchCall(ifStmt->getThen(), callExpr);
+                searchPostBranchCall(ifStmt->getElse(), callExpr);
             }
         }
     }
@@ -121,9 +172,9 @@ void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
     if(SwitchStmt *switchStmt = dyn_cast<SwitchStmt>(father)){
         if(switchStmt->getCond() == stmt){
             // Search for call in switch condexpr
-            if(CallExpr* callExpr = searchCall(stmt, nullptr)){
+            if(CallExpr* callExpr = searchPreBranchCall(stmt)){
                 // Search for log in switch body
-                searchCall(switchStmt->getBody(), callExpr);
+                searchPostBranchCall(switchStmt->getBody(), callExpr);
             }
         }
     }
@@ -144,9 +195,16 @@ void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                 expr = expr->IgnoreParens();
                 if(CallExpr *callExpr = dyn_cast<CallExpr>(expr)){
                     
+                    // Collect return value and arguments.
+                    vector<string> keyVariables;
+                    keyVariables.clear();
                     string returnName = expr2str(binaryOperator->getLHS());
+                    keyVariables.push_back(returnName);
+                    for(unsigned i = 0; i < callExpr->getNumArgs(); i++){
+                        keyVariables.push_back(expr2str(callExpr->getArg(i)));
+                    }
                     
-                    ///search for brothers of stmt
+                    ///search forwards for brothers of stmt
                     ///young_brother means the branch after stmt
                     bool isYoungBrother = false;
                     for(Stmt::child_iterator bro = father->child_begin(); bro != father->child_end(); ++bro){
@@ -162,23 +220,49 @@ void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                                 continue;
                             }
                             
+                            // The non-reaching definition will be ignored
+                            if(BinaryOperator *bo = dyn_cast<BinaryOperator>(brother)){
+                                if(bo->getOpcode() == BO_Assign){
+                                    string assignName = expr2str(bo->getLHS());
+                                    for(vector<string>::iterator it=keyVariables.begin();it!=keyVariables.end();){
+                                        if(assignName != "" && *it == assignName){
+                                            it=keyVariables.erase(it);
+                                        }
+                                        else
+                                            ++it;
+                                    }
+                                }
+                                continue;
+                            }
+                            
                             // Find 'if(ret)'
                             if(IfStmt *ifStmt = dyn_cast<IfStmt>(brother)){
                                 // The return name, which is checked in condexpr
                                 StringRef condString = expr2str(ifStmt->getCond());
-                                if(returnName!= "" && condString.find(returnName) != string::npos){
-                                    // Search for log in both 'then body' and 'else body'
-                                    searchCall(ifStmt->getThen(), callExpr);
-                                    searchCall(ifStmt->getElse(), callExpr);
+                                for(unsigned i = 0; i < keyVariables.size(); i++){
+                                    if(keyVariables[i] != "" && (condString == keyVariables[i] ||
+                                                            condString.find(keyVariables[i] + ".") == 0 ||
+                                                            condString.find(keyVariables[i] + "[") == 0 ||
+                                                            condString.find(keyVariables[i] + "->") == 0)){
+                                        // Search for log in both 'then body' and 'else body'
+                                        searchPostBranchCall(ifStmt->getThen(), callExpr);
+                                        searchPostBranchCall(ifStmt->getElse(), callExpr);
+                                    }
                                 }
                             }
+                            
                             // Find 'switch(ret)'
-                            else if(SwitchStmt *switchStmt = dyn_cast<SwitchStmt>(brother)){
+                            if(SwitchStmt *switchStmt = dyn_cast<SwitchStmt>(brother)){
                                 // The return name, which is checked in condexpr
                                 StringRef condString = expr2str(switchStmt->getCond());
-                                if(returnName!= "" && condString.find(returnName) != string::npos){
+                                for(unsigned i = 0; i < keyVariables.size(); i++){
+                                    if(keyVariables[i] != "" && (condString == keyVariables[i] ||
+                                                                 condString.find(keyVariables[i] + ".") == 0 ||
+                                                                 condString.find(keyVariables[i] + "[") == 0 ||
+                                                                 condString.find(keyVariables[i] + "->") == 0)){
                                     // Search for log in switch body
-                                    searchCall(switchStmt->getBody(), callExpr);
+                                    searchPostBranchCall(switchStmt->getBody(), callExpr);
+                                    }
                                 }
                             }
                         }
@@ -211,6 +295,7 @@ bool FindPostbranchCallVisitor::VisitFunctionDecl (FunctionDecl* Declaration){
     //errs()<<"Found function "<<Declaration->getQualifiedNameAsString() ;
     //errs()<<" @ " << functionstart.printToString(functionstart.getManager()) <<"\n";
     
+    hasRecorded.clear();
     if(Stmt* function = Declaration->getBody()){
         travelStmt(function, function);
     }
