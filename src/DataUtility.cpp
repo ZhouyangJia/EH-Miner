@@ -172,7 +172,7 @@ void CallData::addPostbranchCall(string callName, string callLocation, string de
     }
     
     // Filter the functions
-    string stmt = "select IsOutDef, NumProject from function_call where CallName = '" + logName + "' and DefLoc = '" + defLocation + "'";
+    string stmt = "select IsOutDef, NumProject from function_call where CallName = '" + callName + "' and DefLoc = '" + defLocation + "'";
     rc = sqlite3_exec(db, stmt.c_str(), cb_filter_function, 0, &zErrMsg);
     if(rc != SQLITE_OK){
         return;
@@ -304,6 +304,10 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
         return;
     }
     
+    // Get the stem name
+    projectName = projectName.substr(0, projectName.find_first_of('-'));
+    projectName = projectName.substr(0, projectName.find_first_of('.'));
+    
     // Store the data using database
     if(databaseName.empty())
         return;
@@ -432,12 +436,9 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
                 break;
             }
         }
-        string empty = "";
+        string numdomainstr = numdomainStr;
         //combine whole sql statement
-        stmt = "update function_call set " + empty + \
-                "NumDomain = " + numdomainStr + ", NumProject = " + numprojectStr + ", NumCallTotal = " + numcalltotalStr + \
-                ", " + mDomainName[domainindex] + " = " + numcurdomainStr + ", " + mProjectName[domainindex][projectindex] + " = " + \
-                numcurprojectStr + " where CallName = '" + callName + "'";
+        stmt = "update function_call set NumDomain = " + numdomainstr + ", NumProject = " + numprojectStr + ", NumCallTotal = " + numcalltotalStr + ", " + mDomainName[domainindex] + " = " + numcurdomainStr + ", " + mProjectName[domainindex][projectindex] + " = " + numcurprojectStr + " where CallName = '" + callName + "' and DefLoc = '" + defLocation + "'";
         //execute the update stmt
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
