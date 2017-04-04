@@ -63,72 +63,11 @@ private:
 
 //===----------------------------------------------------------------------===//
 //
-//                     FunctionCallInfo Struct
-//
-//===----------------------------------------------------------------------===//
-// In this struct, we store all the needed information for each function call
-// in all projects. Each instance handles one function, including the function
-// name, call times, def and use location, etc.
-//===----------------------------------------------------------------------===//
-
-struct FunctionCallInfo{
-    
-    // Init the members for each instance
-    FunctionCallInfo();
-    
-    // Print the call infomation in first 'projectNumber' project
-    void print(int domainNumber, int projectNumber);
-    
-    // Function name
-    string callName;
-    
-    // Numbers:
-    // Called domain
-    int numDomain;
-    // Called project
-    int numProject;
-    // Total called number
-    int numCallTotal;
-    // Called number in each domain
-    int numCallInDomain[MAX_PROJECT];
-    // Called number in each project
-    int numCallInProject[MAX_PROJECT];
-    
-    // definition location of the function
-    string defLocation;
-    
-    // Is defined in multiple locations, supposed to be false
-    bool multiDef;
-    
-    // Is the definition locates out of the project, aka, is used the third part library
-    bool outProjectDef;
-};
-
-
-//===----------------------------------------------------------------------===//
-//
-//                     PostbranchCallInfo Struct
-//
-//===----------------------------------------------------------------------===//
-// In this struct, we store all the needed information for each post-branch call
-// in all projects. Each instance handles one function, including the function
-// name, domain and project names, post-branch call times, etc.
-//===----------------------------------------------------------------------===//
-
-struct PostbranchCallInfo{
-    
-    //TODO
-    
-};
-
-//===----------------------------------------------------------------------===//
-//
 //                     CallData Class
 //
 //===----------------------------------------------------------------------===//
 // This class is designed to deal with the data of function and post-brance calls.
-// Since each FroentAction instance may have fucntion calls to store, all the
-// members are static so that they will be shared by all FroentAction instances.
+// All the data will be stored into database.
 //===----------------------------------------------------------------------===//
 
 class CallData{
@@ -137,7 +76,7 @@ public:
     void addFunctionCall(string callName, string callLocation, string defLocation);
     
     // Add a post-branch call
-    void addPostbranchCall(string callName, string logName, string callLocation);
+    void addPostbranchCall(string callName, string callLocation, string defLocation, string logName);
     
     // Print all function call infomation
     void printFunctionCall();
@@ -158,18 +97,10 @@ private:
     // Is the definition locates out of the project, aka, is used the third part library
     bool isOutProjectDef(string defLocation, string domainName, string projectName);
     
-    // Config data with domain and project names
+    // The name of libconfig config file
     static ConfigData configData;
     
-    // Used for recording function call information
-    // Mapping the function name and an integer index
-    static map<string, int> call2index;
-    // For every new function, this variable will increase by 1, and assigned to the mapping.
-    static int totalIndex;
-    // Store all function info, indexed by the integer mapping of function name
-    static vector<FunctionCallInfo> functionCallInfoVec;
-    
-    // The name of SQLite database
+    // The name of SQLite database file
     static string databaseName;
 };
 

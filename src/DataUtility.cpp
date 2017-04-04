@@ -67,66 +67,14 @@ void ConfigData::printName(){
 
 //===----------------------------------------------------------------------===//
 //
-//                     FunctionCallInfo Struct
-//
-//===----------------------------------------------------------------------===//
-// In this struct, we store all the needed information for each function call
-// in all projects. Each instance handles one function, including the function
-// name, call times, def and use location, etc.
-//===----------------------------------------------------------------------===//
-
-// Init for CallInfo, each instance of CallInfor stores infomation for one call
-// The meaning of each member can be found in DataUtility.h
-FunctionCallInfo::FunctionCallInfo(){
-    callName = "";
-    numDomain = 0;
-    numProject = 0;
-    numCallTotal = 0;
-    memset(numCallInDomain, 0, MAX_PROJECT*sizeof(int));
-    memset(numCallInProject, 0, MAX_PROJECT*sizeof(int));
-    defLocation = "";
-    multiDef = false;
-    outProjectDef = false;
-}
-
-// Print the call infomation
-void FunctionCallInfo::print(int domainNumber, int projectNumber){
-    
-    // callName, defLocation, outProjectDef, multiDef, numDomain, numProject, numCallTotal,
-    cout<<callName<<", ";
-    cout<<defLocation<<", "<<outProjectDef<<", "<<multiDef<<", ";
-    cout<<numDomain<<", "<<numProject<<", "<<numCallTotal<<", ";
-    
-    for(int i = 0; i < domainNumber; i++){
-        cout<<numCallInDomain[i]<<", ";
-    }
-    
-    for(int i = 0; i < projectNumber; i++){
-        cout<<numCallInProject[i];
-        if(i == projectNumber - 1)
-            cout<<endl;
-        else
-            cout<<", ";
-    }
-    return;
-}
-
-//===----------------------------------------------------------------------===//
-//
 //                     CallData Class
 //
 //===----------------------------------------------------------------------===//
 // This class is designed to deal with the data of function and post-brance calls.
-// Since each FroentAction instance may have fucntion calls to store, all the
-// members are static so that they will be shared by all FroentAction instances.
+// All the data will be stored into database.
 //===----------------------------------------------------------------------===//
 
-// The memebers are static, and used to store all the call information
-// The meaning of each member can be found in DataUtility.h
 ConfigData CallData::configData;
-int CallData::totalIndex;
-map<string, int> CallData::call2index;
-vector<FunctionCallInfo> CallData::functionCallInfoVec;
 string CallData::databaseName;
 
 // Set the name of SQLite database
@@ -134,42 +82,11 @@ void CallData::setDatabase(string name){
     databaseName = name;
 }
 
-// Print all post-branch call infomation
-void CallData::printPostbranchCall(){
-    //TODO 
-}
-
-// Print all the call infomation
-void CallData::printFunctionCall(){
-    
-    if(totalIndex == 0)
-        return;
-    
-    cout<<"Call ID, Call Name, Def Location, Has Out Def, Is Multi Def, Num Domain, Num Project, Num Call Total";
-    
-    int domainNumber = 0;
-    int projectNumber = 0;
-    
-    vector<string> domainName = configData.getDomainName();
-    domainNumber = domainName.size();
-    for(unsigned i = 0; i < domainName.size(); i++){
-        cout<<", domain:"<<domainName[i];
+static int cb_filter_function(void *NotUsed, int argc, char **argv, char **azColName){
+    if(atoi(argv[0]) == 1 && atoi(argv[1]) >= 3){
+        return 0;
     }
-    
-    vector<vector<string>> projectName = configData.getProjectName();
-    for(unsigned i = 0; i < projectName.size(); i++){
-        projectNumber += projectName[i].size();
-        for(unsigned j = 0; j < projectName[i].size(); j++){
-            cout<<", "<<domainName[i]<<":"<<projectName[i][j];
-        }
-    }
-    cout<<endl;
-    
-    for(int i = 1; i <= totalIndex; i++){
-        cout<<i<<", ";
-        functionCallInfoVec[i-1].print(domainNumber, projectNumber);
-    }
-    return;
+    return -1;
 }
 
 // Callback function to get the NumProjectCall in table function_info
@@ -211,7 +128,7 @@ static int cb_get_info(void *data, int argc, char **argv, char **azColName){
 }
 
 // Add a post-branch call
-void CallData::addPostbranchCall(string callName, string logName, string callLocation){
+void CallData::addPostbranchCall(string callName, string callLocation, string defLocation, string logName){
     
     // Get the domain and project name, and delete the version since the characters like '.' and '.' will ruin the sql stmt
     vector<string> mDomainName = configData.getDomainName();
@@ -254,8 +171,15 @@ void CallData::addPostbranchCall(string callName, string logName, string callLoc
         return;
     }
     
+    // Filter the functions
+    string stmt = "select IsOutDef, NumProject from function_call where CallName = '" + logName + "' and DefLoc = '" + defLocation + "'";
+    rc = sqlite3_exec(db, stmt.c_str(), cb_filter_function, 0, &zErrMsg);
+    if(rc != SQLITE_OK){
+        return;
+    }
+    
     // Prepare the sql stmt to create the table
-    string stmt = "create table if not exists postbranch_info (\
+    stmt = "create table if not exists postbranch_call (\
     ID integer primary key autoincrement, LogName text, DomainName text, ProjectName text, PrebranchCall text, \
     NumPrebranchCall integer, NumPostbranchCall integer, NumProjectCall integer)";
     rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
@@ -263,14 +187,14 @@ void CallData::addPostbranchCall(string callName, string logName, string callLoc
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
-    
+
     // Check whether the function is called the first time
     int ID = 0;
     vector<string> values;
     values.clear();
     // Store ID and values for the certain row
     pair<int, vector<string>> rowdata = make_pair(ID, values);
-    stmt="select * from postbranch_info where LogName = '" + logName + "'and DomainName = '" + domainName + "'and ProjectName = '" + projectName + "'";
+    stmt="select * from postbranch_call where LogName = '" + logName + "'and DomainName = '" + domainName + "'and ProjectName = '" + projectName + "'";
     rc = sqlite3_exec(db, stmt.c_str(), cb_get_info, &rowdata, &zErrMsg);
     if(rc!=SQLITE_OK){
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
@@ -282,7 +206,7 @@ void CallData::addPostbranchCall(string callName, string logName, string callLoc
         
         // Get the NumProjectCall in function_info table
         char numProjectCallStr[10] = "0";
-        stmt = "select " + projectName + " from function_info where CallName = '" + logName + "'";
+        stmt = "select " + projectName + " from function_call where CallName = '" + logName + "' and DefLoc = '" + defLocation + "'";
         rc = sqlite3_exec(db, stmt.c_str(), cb_search_numcall, &numProjectCallStr, &zErrMsg);
         if(rc!=SQLITE_OK){
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
@@ -290,7 +214,7 @@ void CallData::addPostbranchCall(string callName, string logName, string callLoc
         }
         
         // Prepare the sql stmt to insert new entry
-        stmt = "insert into postbranch_info (LogName, DomainName, ProjectName, PrebranchCall, \
+        stmt = "insert into postbranch_call (LogName, DomainName, ProjectName, PrebranchCall, \
         NumPrebranchCall, NumPostbranchCall, NumProjectCall) values ('" + logName + "', '" + domainName + "', '" + projectName + "', '#" + callName + "#', 1, 1, " + numProjectCallStr + ")";
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
@@ -320,7 +244,7 @@ void CallData::addPostbranchCall(string callName, string logName, string callLoc
         sprintf(numPrebranchCallStr, "%d", numPrebranchCall);
         sprintf(numPostbranchCallStr, "%d", numPostbranchCall);
         //combine whole sql statement
-        stmt = "update postbranch_info set PrebranchCall = '" + prebranchCall + "', NumPrebranchCall = " + numPrebranchCallStr + ", NumPostbranchCall = " + numPostbranchCallStr + " where LogName = '" + logName + "'and DomainName = '" + domainName + "'and ProjectName = '" + projectName + "'";
+        stmt = "update postbranch_call set PrebranchCall = '" + prebranchCall + "', NumPrebranchCall = " + numPrebranchCallStr + ", NumPostbranchCall = " + numPostbranchCallStr + " where LogName = '" + logName + "'and DomainName = '" + domainName + "'and ProjectName = '" + projectName + "'";
         //execute the update stmt
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
@@ -380,52 +304,6 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
         return;
     }
     
-    // The function is called the first time
-    if(call2index[callName] == 0){
-        
-        // Update and assign the index
-        totalIndex++;
-        call2index[callName] = totalIndex;
-        
-        // Declare the CallInfo instance, and init
-        FunctionCallInfo functionCallInfo;
-        
-        functionCallInfo.callName = callName;
-        functionCallInfo.numProject++;
-        functionCallInfo.numDomain++;
-        functionCallInfo.numCallTotal++;
-        functionCallInfo.numCallInProject[projectID]++;
-        functionCallInfo.numCallInDomain[domainID]++;
-        functionCallInfo.defLocation = defLocation;
-        functionCallInfo.multiDef = false;
-        functionCallInfo.outProjectDef = isOutProjectDef(defLocation, domainName, projectName);
-        
-        // Push the instance to callInfoVec
-        functionCallInfoVec.push_back(functionCallInfo);
-    }
-    // The function has been called
-    else{
-        // Get the index (call2index is starting from 1)
-        int curIndex = call2index[callName] - 1;
-        
-        // Update the infomation
-        functionCallInfoVec[curIndex].numCallTotal++;
-        if(functionCallInfoVec[curIndex].numCallInProject[projectID] == 0)
-            functionCallInfoVec[curIndex].numProject++;
-        if(functionCallInfoVec[curIndex].numCallInDomain[domainID] == 0)
-            functionCallInfoVec[curIndex].numDomain++;
-        functionCallInfoVec[curIndex].numCallInProject[projectID]++;
-        functionCallInfoVec[curIndex].numCallInDomain[domainID]++;
-        if(functionCallInfoVec[curIndex].defLocation.find(defLocation) == string::npos){
-            functionCallInfoVec[curIndex].multiDef = true;
-            functionCallInfoVec[curIndex].defLocation += "#";
-            functionCallInfoVec[curIndex].defLocation += defLocation;
-        }
-        if(isOutProjectDef(defLocation, domainName, projectName))
-            functionCallInfoVec[curIndex].outProjectDef = true;
-    }
-    
-    
     // Store the data using database
     if(databaseName.empty())
         return;
@@ -442,9 +320,9 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
     }
     
     // Prepare the sql stmt to create the table
-    string stmt = "create table if not exists function_info (\
+    string stmt = "create table if not exists function_call (\
     ID integer primary key autoincrement, \
-    CallName text, DefLoc text, HasOutDef integer, IsMulDef integer, \
+    CallName text, DefLoc text, IsOutDef integer, \
     NumDomain integer, NumProject integer, NumCallTotal integer";
     for(unsigned i = 0; i < mDomainName.size(); i++){
         stmt+=", " + mDomainName[i] + " integer";
@@ -467,7 +345,7 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
     values.clear();
     // Store ID and values for the certain row
     pair<int, vector<string>> rowdata = make_pair(ID, values);
-    stmt="select * from function_info where CallName = '" + callName + "'";
+    stmt="select * from function_call where CallName = '" + callName + "' and DefLoc = '" + defLocation + "'";
     rc = sqlite3_exec(db, stmt.c_str(), cb_get_info, &rowdata, &zErrMsg);
     if(rc!=SQLITE_OK){
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
@@ -478,7 +356,7 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
     if(rowdata.first == 0){
         
         // Prepare the sql stmt to insert new entry
-        stmt = "insert into function_info (CallName, DefLoc, HasOutDef, IsMulDef, NumDomain, NumProject, NumCallTotal";
+        stmt = "insert into function_call (CallName, DefLoc, IsOutDef, NumDomain, NumProject, NumCallTotal";
         for(unsigned i = 0; i < mDomainName.size(); i++){
             stmt+=", " + mDomainName[i];
         }
@@ -492,7 +370,7 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
             isOutDef = "1";
         else
             isOutDef = "0";
-        stmt+= ") values ('" + callName + "', '" + defLocation + "', " + isOutDef + ", 0, 1, 1, 1";
+        stmt+= ") values ('" + callName + "', '" + defLocation + "', " + isOutDef + ", 1, 1, 1";
         for(unsigned i = 0; i < mDomainName.size(); i++){
             if(domainName.find(mDomainName[i]) != string::npos)
                 stmt+=", 1";
@@ -521,21 +399,12 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
         
         // Prepare the sql stmt to update the entry
         //get old value
-        string defloc = rowdata.second[2];
-        string outdef = rowdata.second[3];
-        string multidef = rowdata.second[4];
-        int numdomain =  atoi(rowdata.second[5].c_str());
-        int numproject =  atoi(rowdata.second[6].c_str());
-        int numcalltotal = atoi(rowdata.second[7].c_str());
-        int numcurdomain = atoi(rowdata.second[8+domainID].c_str());
-        int numcurproject = atoi(rowdata.second[8+mDomainName.size()+projectID].c_str());
+        int numdomain =  atoi(rowdata.second[4].c_str());
+        int numproject =  atoi(rowdata.second[5].c_str());
+        int numcalltotal = atoi(rowdata.second[6].c_str());
+        int numcurdomain = atoi(rowdata.second[7+domainID].c_str());
+        int numcurproject = atoi(rowdata.second[7+mDomainName.size()+projectID].c_str());
         //get new value
-        if(isOutProjectDef(defLocation, domainName, projectName))
-            outdef = "1";
-        if(defloc.find(defLocation) == string::npos){
-            multidef = "1";
-            defloc += "#" + defLocation;
-        }
         if(numcurdomain == 0)
             numdomain++;
         if(numcurproject == 0)
@@ -563,9 +432,10 @@ void CallData::addFunctionCall(string callName, string callLocation, string defL
                 break;
             }
         }
+        string empty = "";
         //combine whole sql statement
-        stmt = "update function_info set DefLoc = '" + defloc + "', HasOutDef = " + outdef + ", IsMulDef = " + multidef + \
-                ", NumDomain = " + numdomainStr + ", NumProject = " + numprojectStr + ", NumCallTotal = " + numcalltotalStr + \
+        stmt = "update function_call set " + empty + \
+                "NumDomain = " + numdomainStr + ", NumProject = " + numprojectStr + ", NumCallTotal = " + numcalltotalStr + \
                 ", " + mDomainName[domainindex] + " = " + numcurdomainStr + ", " + mProjectName[domainindex][projectindex] + " = " + \
                 numcurprojectStr + " where CallName = '" + callName + "'";
         //execute the update stmt

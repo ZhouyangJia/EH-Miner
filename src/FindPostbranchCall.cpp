@@ -36,18 +36,27 @@ void FindPostbranchCallVisitor::recordCallLog(CallExpr *callExpr, CallExpr *logE
     string logName = logDecl->getNameAsString();
     
     FullSourceLoc callStart = CI->getASTContext().getFullLoc(callExpr->getLocStart());
-    if(!callStart.isValid())
+    FullSourceLoc defStart = CI->getASTContext().getFullLoc(callDecl->getLocStart());
+    if(!callStart.isValid() || !defStart.isValid())
         return;
     
     callStart = callStart.getExpansionLoc();
+    defStart = defStart.getSpellingLoc();
+    
     string callLoc = callStart.printToString(callStart.getManager());
+    string defLoc = defStart.printToString(callStart.getManager());
+    
     string callFile = callLoc.substr(0, callLoc.find_first_of(':'));
+    string defFile = defLoc.substr(0, defLoc.find_first_of(':'));
+    
     SmallString<128> callFullPath(callFile);
     CI->getFileManager().makeAbsolutePath(callFullPath);
+    SmallString<128> defFullPath(defFile);
+    CI->getFileManager().makeAbsolutePath(defFullPath);
     
     // Store the call information into CallData
     CallData callData;
-    callData.addPostbranchCall(callName, logName, callFullPath.str());
+    callData.addPostbranchCall(callName, callFullPath.str(), defFullPath.str(), logName);
 }
 
 // Get the source code of given stmt

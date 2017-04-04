@@ -124,7 +124,6 @@ static cl::opt<string> DatabaseFile("database-file",
                                   cl::desc("Specify database file (absolute path)."),
                                   cl::cat(ClangMytoolCategory));
 
-
 static cl::opt<string> SourceFile("source-file",
                                     cl::desc("Specify source file (default is path/to/clang/tools/clang-dummy/etc/test.conf."),
                                     cl::cat(ClangMytoolCategory));
@@ -264,8 +263,13 @@ int main(int argc, const char **argv){
     }
     
     if(!DatabaseFile.empty()){
+        errs()<<DatabaseFile<<"\n";
         CallData callData;
         callData.setDatabase(DatabaseFile);
+    }
+    else{
+        errs()<<"Please specify the database file!\n";
+        exit(1);
     }
     
     if(!FindFunctionCall && !FindPostbranchCall){
@@ -310,15 +314,5 @@ int main(int argc, const char **argv){
         }
     }
     
-    // Print the result only when not using database
-    if(FindFunctionCall && DatabaseFile.empty()){
-        CallData callData;
-        callData.printFunctionCall();
-    }
-    
-    if(FindPostbranchCall && DatabaseFile.empty()){
-        CallData callData;
-        callData.printPostbranchCall();
-    }
     return 0;
 }
