@@ -130,6 +130,72 @@ static int cb_get_info(void *data, int argc, char **argv, char **azColName){
     return SQLITE_OK;
 }
 
+// Add a branch call
+void CallData::addBranchCall(BranchInfo branchInfo){
+    
+    // Get the domain name and project name from given path
+    pair<string, string> mDomProName = getDomainProjectName(branchInfo.callID);
+    string domainName = mDomProName.first;
+    string projectName = mDomProName.second;
+    if(domainName.empty() || projectName.empty()){
+        return;
+    }
+    
+    // Prepare the sql stmt to create the table
+    int rc;
+    char *zErrMsg = 0;
+    string stmt = "create table if not exists branch_call (ID integer primary key autoincrement, DomainName text, ProjectName text, CallName text, CallDefLoc text, CallID text, CallStr text, CallReturn text, CallArgVec text, CallArgNum integer, ExprNodeVec text, ExprNodeNum integer, ExprStr text, LogName text, LogDefLoc text, LogID text, LogStr text, LogArgVec text, LogArgNum integer)";
+    if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
+    rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
+    if(rc!=SQLITE_OK){
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+    }
+    
+    // Prepare the sql stmt to insert new entry
+    string callArgVecStr;
+    for(unsigned i = 0; i < branchInfo.callArgVec.size(); i++){
+        callArgVecStr += branchInfo.callArgVec[i];
+        if(i != branchInfo.callArgVec.size() - 1)
+            callArgVecStr += "#";
+    }
+    if(callArgVecStr == "")
+        callArgVecStr = "-";
+    string exprNodeVecStr;
+    for(unsigned i = 0; i < branchInfo.exprNodeVec.size(); i++){
+        exprNodeVecStr += branchInfo.exprNodeVec[i];
+        if(i != branchInfo.exprNodeVec.size() - 1)
+            exprNodeVecStr += "#";
+    }
+    if(exprNodeVecStr == "")
+        exprNodeVecStr = "-";
+    string logArgVecStr;
+    for(unsigned i = 0; i < branchInfo.logArgVec.size(); i++){
+        logArgVecStr += branchInfo.logArgVec[i];
+        if(i != branchInfo.logArgVec.size() - 1)
+            logArgVecStr += "#";
+    }
+    if(logArgVecStr == "")
+        logArgVecStr = "-";
+    
+    char callArgNumStr[10];
+    char exprNodeNumStr[10];
+    char logArgNumStr[10];
+    sprintf(callArgNumStr, "%lu", branchInfo.callArgVec.size());
+    sprintf(exprNodeNumStr, "%lu", branchInfo.exprNodeVec.size());
+    sprintf(logArgNumStr, "%lu", branchInfo.logArgVec.size());
+
+    stmt = "insert into branch_call (DomainName, ProjectName, CallName, CallDefLoc, CallID, CallStr, CallReturn, CallArgVec, CallArgNum, ExprNodeVec, ExprNodeNum, ExprStr, LogName, LogDefLoc, LogID, LogStr, LogArgVec, LogArgNum) values ('" + domainName + "', '" + projectName + "', '" + branchInfo.callName + "', '" + branchInfo.callDefLoc + "', '" + branchInfo.callID + "', '" + branchInfo.callStr + "', '" + branchInfo.callReturn + "', '" + callArgVecStr + "', '" + callArgNumStr + "', '" + exprNodeVecStr + "', '" + exprNodeNumStr + "', '" + branchInfo.exprStr + "', '" + branchInfo.logName + "', '" + branchInfo.logDefLoc + "', '" + branchInfo.logID + "', '" + branchInfo.logStr + "', '" + logArgVecStr + "', '" + logArgNumStr +"')";
+    if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
+    rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
+    if(rc!=SQLITE_OK){
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+    }
+    
+    return;
+}
+
 // Add a pre-branch call
 void CallData::addPrebranchCall(string callName, string callLocFullPath, string callDefFullPath, string logName, string logDefFullPath){
     
@@ -138,16 +204,13 @@ void CallData::addPrebranchCall(string callName, string callLocFullPath, string 
     string domainName = mDomProName.first;
     string projectName = mDomProName.second;
     if(domainName.empty() || projectName.empty()){
-        cerr<<"Cannot find domain or project name for "<<callName<<":\n";
-        cerr<<"\tcall@"<<callLocFullPath<<".\n";
         return;
     }
     
     // Prepare the sql stmt to create the table
     int rc;
     char *zErrMsg = 0;
-    string stmt = "create table if not exists prebranch_call (\
-    ID integer primary key autoincrement, CallName text, CallDefLoc text, DomainName text, ProjectName text, LogName text, LogDefLoc text, NumLogTime integer)";
+    string stmt = "create table if not exists prebranch_call (ID integer primary key autoincrement, CallName text, CallDefLoc text, DomainName text, ProjectName text, LogName text, LogDefLoc text, NumLogTime integer)";
     if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
     rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
     if(rc!=SQLITE_OK){
@@ -173,8 +236,7 @@ void CallData::addPrebranchCall(string callName, string callLocFullPath, string 
     if(rowdata.first == 0){
         
         // Prepare the sql stmt to insert new entry
-        stmt = "insert into prebranch_call (CallName, CallDefLoc, DomainName, ProjectName, LogName, LogDefLoc, \
-        NumLogTime) values ('" + callName + "', '" + callDefFullPath + "', '" + domainName + "', '" + projectName + "', '" + logName + "', '" + logDefFullPath + "', 1)";
+        stmt = "insert into prebranch_call (CallName, CallDefLoc, DomainName, ProjectName, LogName, LogDefLoc, NumLogTime) values ('" + callName + "', '" + callDefFullPath + "', '" + domainName + "', '" + projectName + "', '" + logName + "', '" + logDefFullPath + "', 1)";
         if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){

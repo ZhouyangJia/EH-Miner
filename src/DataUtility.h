@@ -65,6 +65,35 @@ private:
 
 //===----------------------------------------------------------------------===//
 //
+//                     BranchInfo Struct
+//
+//===----------------------------------------------------------------------===//
+// This class stores the data of information around a branch statement. When the
+// branch is data dependent on a callexpr, we declare an instance to store its
+// context, including callexpr, branch condition and the following function calls
+//===----------------------------------------------------------------------===//
+struct BranchInfo{
+    
+    string callName;
+    string callDefLoc;
+    string callID;
+    string callStr;
+    string callReturn;
+    vector<string> callArgVec;
+    
+    vector<string> exprNodeVec; //reverse Polish notation
+    string exprStr;
+    
+    string logName;
+    string logDefLoc;
+    string logID;
+    string logStr;
+    vector<string> logArgVec;
+    
+};
+
+//===----------------------------------------------------------------------===//
+//
 //                     CallData Class
 //
 //===----------------------------------------------------------------------===//
@@ -85,6 +114,9 @@ public:
     
     // Add a pre-branch call
     void addPrebranchCall(string callName, string callLocFullPath, string callDefFullPath, string logName, string logDefFullPath);
+    
+    // Add a branch call
+    void addBranchCall(BranchInfo branchInfo);
     
     // Open the SQLite database
     void openDatabase(string databasefile);

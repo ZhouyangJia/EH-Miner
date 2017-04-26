@@ -84,9 +84,9 @@ public:
     void travelStmt(Stmt* stmt, Stmt* father);
 
 private:
-    // Record call-log pair or call-ret pair
-    void recordCallLog(CallExpr *callExpr, CallExpr *logExpr, ReturnStmt *retStmt);
-        
+    // Record branch information
+    void recordBranchCall(CallExpr *callExpr, CallExpr *logExpr, ReturnStmt *retStmt);
+    
     // Search pre-branch call site in given stmt
     CallExpr* searchPreBranchCall(Stmt* stmt);
     // Search post-branch call site in given stmt
@@ -97,22 +97,26 @@ private:
     // Get the source code of given stmt
     StringRef expr2str(Stmt* stmt);
     
+    // Get the expr node vector from branch condition
+    vector<string> getExprNodeVec(Expr* expr);
     
     // Check whether the the function call has been recorded or not
     map<string, bool> hasRecorded;
-    
     // Check whether the log name has been recorded or not
     map<pair<CallExpr*, string>, bool> hasSameLog;
     
+    // Record the visited function in this visitor
     FunctionDecl* FD;
     
+    // Information about the function call
     // Record the branch statement and the path where the post-branch call appears
-    Stmt* branchStmt;
-    int   pathNumber;
+    Stmt* mBranchStmt;
+    int   mPathNumber;
+    // Record the return name, if any
+    string mReturnName;
     
     CompilerInstance* CI;
     StringRef InFile;
-    
 };
 
 class FindBranchCallConsumer : public ASTConsumer {
