@@ -1,4 +1,4 @@
-//===- FindPostbranchCall.h - A frontend action outputting post-branch calls -===//
+//===- FindBranchCall.h - A frontend action outputting post-branch calls -===//
 //
 //                     Cross Project Checking
 //
@@ -9,12 +9,12 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implements a frontend action to output function calls which are
-// called after checking by a branch statement.
+// called before or after checking by a branch statement.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef FindPostbranchCall_h
-#define FindPostbranchCall_h
+#ifndef FindBranchCall_h
+#define FindBranchCall_h
 
 #include <map>
 #include <vector>
@@ -65,7 +65,7 @@ using namespace clang;
 
 //===----------------------------------------------------------------------===//
 //
-// FindPostbranchCallAction, FindPostbranchCallConsumer and FindPostbranchCallVisitor
+// FindBranchCallAction, FindBranchCallConsumer and FindBranchCallVisitor
 //
 //===----------------------------------------------------------------------===//
 // These three classes work in tandem to prefrom the frontend analysis, if you
@@ -73,9 +73,9 @@ using namespace clang;
 //      http://clang.llvm.org/docs/RAVFrontendAction.html
 //===----------------------------------------------------------------------===//
 
-class FindPostbranchCallVisitor : public RecursiveASTVisitor <FindPostbranchCallVisitor> {
+class FindBranchCallVisitor : public RecursiveASTVisitor <FindBranchCallVisitor> {
 public:
-    explicit FindPostbranchCallVisitor(CompilerInstance* CI, StringRef InFile) : CI(CI), InFile(InFile){};
+    explicit FindBranchCallVisitor(CompilerInstance* CI, StringRef InFile) : CI(CI), InFile(InFile){};
     
     // Visit the function declaration and travel the function body
     bool VisitFunctionDecl (FunctionDecl* functionDecl);
@@ -84,8 +84,8 @@ public:
     void travelStmt(Stmt* stmt, Stmt* father);
 
 private:
-    // Record call-log pair
-    void recordCallLog(CallExpr *callExpr, CallExpr *logExpr);
+    // Record call-log pair or call-ret pair
+    void recordCallLog(CallExpr *callExpr, CallExpr *logExpr, ReturnStmt *retStmt);
         
     // Search pre-branch call site in given stmt
     CallExpr* searchPreBranchCall(Stmt* stmt);
@@ -97,27 +97,37 @@ private:
     // Get the source code of given stmt
     StringRef expr2str(Stmt* stmt);
     
-    // Check whether the log has been recorded or not
-    map<CallExpr*, bool> hasRecorded;
+    
+    // Check whether the the function call has been recorded or not
+    map<string, bool> hasRecorded;
+    
+    // Check whether the log name has been recorded or not
+    map<pair<CallExpr*, string>, bool> hasSameLog;
+    
+    FunctionDecl* FD;
+    
+    // Record the branch statement and the path where the post-branch call appears
+    Stmt* branchStmt;
+    int   pathNumber;
     
     CompilerInstance* CI;
     StringRef InFile;
     
 };
 
-class FindPostbranchCallConsumer : public ASTConsumer {
+class FindBranchCallConsumer : public ASTConsumer {
 public:
-    explicit FindPostbranchCallConsumer(CompilerInstance* CI, StringRef InFile) : Visitor(CI, InFile){}
+    explicit FindBranchCallConsumer(CompilerInstance* CI, StringRef InFile) : Visitor(CI, InFile){}
     
     // Handle the translation unit and visit each function declaration
     virtual void HandleTranslationUnit (clang::ASTContext &Context);
     
 private:
-    FindPostbranchCallVisitor Visitor;
+    FindBranchCallVisitor Visitor;
     StringRef InFile;
 };
 
-class FindPostbranchCallAction : public ASTFrontendAction {
+class FindBranchCallAction : public ASTFrontendAction {
 public:
     virtual std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, StringRef InFile);
 private:
@@ -129,4 +139,4 @@ private:
     static map<string, bool> hasAnalyzed;
 };
 
-#endif /* FindPostbranchCall_h */
+#endif /* FindBranchCall_h */

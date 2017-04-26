@@ -78,7 +78,11 @@ public:
     // Trave the statement and find function call
     void travelStmt(Stmt*);
     
+    // Check whether the the function call has been recorded or not
+    map<string, bool> hasRecorded;
+    
 private:
+    FunctionDecl* FD;
     CompilerInstance* CI;
     StringRef InFile;
 };

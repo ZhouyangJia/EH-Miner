@@ -8,10 +8,12 @@ Support
 )
 
 add_clang_executable(clang-dummy
+    src/CallGraph.cpp
+    src/CallGraph.h
     src/FindFunctionCall.cpp
     src/FindFunctionCall.h
-    src/FindPostbranchCall.cpp
-    src/FindPostbranchCall.h
+    src/FindBranchCall.cpp
+    src/FindBranchCall.h
     src/DataUtility.cpp
     src/DataUtility.h
     src/Main.cpp

@@ -34,35 +34,48 @@ void FindFunctionCallVisitor::travelStmt(Stmt* stmt){
     
     // If find a call expression
     if(CallExpr* callExpr = dyn_cast<CallExpr>(stmt)){
-        if(FunctionDecl* functionDecl = callExpr->getDirectCallee()){
+        if(FunctionDecl* callFunctionDecl = callExpr->getDirectCallee()){
             
             // Get the name, call location and definition location of the call expression
-            string name = functionDecl->getNameAsString();
-            FullSourceLoc callStart = CI->getASTContext().getFullLoc(callExpr->getLocStart());
-            FullSourceLoc defStart = CI->getASTContext().getFullLoc(functionDecl->getLocStart());
+            string callName = callFunctionDecl->getNameAsString();
+            string funcName = FD->getNameAsString();
+            FullSourceLoc callLoc = CI->getASTContext().getFullLoc(callExpr->getLocStart());
+            FullSourceLoc callDef = CI->getASTContext().getFullLoc(callFunctionDecl->getLocStart());
+            FullSourceLoc funcDef = CI->getASTContext().getFullLoc(FD->getLocStart());
             
-            if(callStart.isValid() && defStart.isValid()){
+            if(callLoc.isValid() && callDef.isValid() && funcDef.isValid()){
                 
-                callStart = callStart.getExpansionLoc();
-                defStart = defStart.getSpellingLoc();
+                callLoc = callLoc.getExpansionLoc();
+                callDef = callDef.getSpellingLoc();
+                funcDef = funcDef.getSpellingLoc();
                 
-                string callLoc = callStart.printToString(callStart.getManager());
-                string defLoc = defStart.printToString(callStart.getManager());
+                string callLocFile = callLoc.printToString(callLoc.getManager());
+                string callDefFile = callDef.printToString(callDef.getManager());
+                string funcDefFile = funcDef.printToString(funcDef.getManager());
                 
-                string callFile = callLoc.substr(0, callLoc.find_first_of(':'));
-                string defFile = defLoc.substr(0, defLoc.find_first_of(':'));
+                callLocFile = callLocFile.substr(0, callLocFile.find_first_of(':'));
+                callDefFile = callDefFile.substr(0, callDefFile.find_first_of(':'));
+                funcDefFile = funcDefFile.substr(0, funcDefFile.find_first_of(':'));
                 
                 // The API callStart.printToString(callStart.getManager()) is behaving inconsistently,
                 // more infomation see http://lists.llvm.org/pipermail/cfe-dev/2016-October/051092.html
                 // So, we use makeAbsolutePath.
-                SmallString<128> callFullPath(callFile);
-                CI->getFileManager().makeAbsolutePath(callFullPath);
-                SmallString<128> defFullPath(defFile);
-                CI->getFileManager().makeAbsolutePath(defFullPath);
+                SmallString<128> callLocFullPath(callLocFile);
+                CI->getFileManager().makeAbsolutePath(callLocFullPath);
+                SmallString<128> callDefFullPath(callDefFile);
+                CI->getFileManager().makeAbsolutePath(callDefFullPath);
+                SmallString<128> funcDefFullPath(funcDefFile);
+                CI->getFileManager().makeAbsolutePath(funcDefFullPath);
                 
                 // Store the call information into CallData
                 CallData callData;
-                callData.addFunctionCall(name, callFullPath.str(), defFullPath.str());
+                callData.addFunctionCall(callName, callLocFullPath.str(), callDefFullPath.str());
+                
+                string callinfo = funcName + funcDefFullPath.str().str() + callName + callDefFullPath.str().str() + callLocFullPath.str().str();
+                if(hasRecorded[callinfo] == false){
+                    hasRecorded[callinfo] = true;
+                    callData.addCallGraph(funcName, funcDefFullPath.str(), callName, callDefFullPath.str(), callLocFullPath.str());
+                }
             }
         }
     }
@@ -86,9 +99,12 @@ bool FindFunctionCallVisitor::VisitFunctionDecl(FunctionDecl* Declaration) {
     if(functionstart.getFileID() != CI->getSourceManager().getMainFileID())
         return true;
     
-    //errs()<<"Found function "<<Declaration->getQualifiedNameAsString() ;
-    //errs()<<" @ " << functionstart.printToString(functionstart.getManager()) <<"\n";
+    FD = Declaration;
     
+    //llvm::errs()<<"Found function "<<Declaration->getQualifiedNameAsString() ;
+    //llvm::errs()<<" @ " << functionstart.printToString(functionstart.getManager()) <<"\n";
+    
+    hasRecorded.clear();
     if(Declaration->getBody()){
         travelStmt(Declaration->getBody());
     }

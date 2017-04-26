@@ -1,4 +1,4 @@
-//===- FindPostbranchCall.h - A frontend action outputting post-branch calls -===//
+//===- FindBranchCall.h - A frontend action outputting pre/post-branch calls -===//
 //
 //                     Cross Project Checking
 //
@@ -13,54 +13,83 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "FindPostbranchCall.h"
+#include "FindBranchCall.h"
 #include "DataUtility.h"
 
 // Record call-log pair
-void FindPostbranchCallVisitor::recordCallLog(CallExpr *callExpr, CallExpr *logExpr){
+void FindBranchCallVisitor::recordCallLog(CallExpr *callExpr, CallExpr *logExpr, ReturnStmt* retStmt){
     
-    if(!callExpr || !logExpr)
-        return;
-    if(!callExpr->getDirectCallee() || !logExpr->getDirectCallee())
+    if(!callExpr || (!logExpr && !retStmt))
         return;
     
-    if(hasRecorded[logExpr] != false){
+    if(callExpr && !callExpr->getDirectCallee())
         return;
-    }
-    hasRecorded[logExpr] = true;
     
     FunctionDecl* callDecl = callExpr->getDirectCallee();
-    FunctionDecl* logDecl = logExpr->getDirectCallee();
 
     string callName = callDecl->getNameAsString();
-    string logName = logDecl->getNameAsString();
     
-    FullSourceLoc callStart = CI->getASTContext().getFullLoc(callExpr->getLocStart());
-    FullSourceLoc defStart = CI->getASTContext().getFullLoc(callDecl->getLocStart());
-    if(!callStart.isValid() || !defStart.isValid())
+    FullSourceLoc callLoc = CI->getASTContext().getFullLoc(callExpr->getLocStart());
+    FullSourceLoc callDef = CI->getASTContext().getFullLoc(callDecl->getLocStart());
+    if(!callLoc.isValid() || !callDef.isValid())
         return;
     
-    callStart = callStart.getExpansionLoc();
-    defStart = defStart.getSpellingLoc();
+    callLoc = callLoc.getExpansionLoc();
+    callDef = callDef.getSpellingLoc();
     
-    string callLoc = callStart.printToString(callStart.getManager());
-    string defLoc = defStart.printToString(callStart.getManager());
+    string callLocFile = callLoc.printToString(callLoc.getManager());
+    string callDefFile = callDef.printToString(callDef.getManager());
     
-    string callFile = callLoc.substr(0, callLoc.find_first_of(':'));
-    string defFile = defLoc.substr(0, defLoc.find_first_of(':'));
+    callLocFile = callLocFile.substr(0, callLocFile.find_first_of(':'));
+    callDefFile = callDefFile.substr(0, callDefFile.find_first_of(':'));
     
-    SmallString<128> callFullPath(callFile);
-    CI->getFileManager().makeAbsolutePath(callFullPath);
-    SmallString<128> defFullPath(defFile);
-    CI->getFileManager().makeAbsolutePath(defFullPath);
+    SmallString<128> callLocFullPath(callLocFile);
+    CI->getFileManager().makeAbsolutePath(callLocFullPath);
+    SmallString<128> callDefFullPath(callDefFile);
+    CI->getFileManager().makeAbsolutePath(callDefFullPath);
     
     // Store the call information into CallData
     CallData callData;
-    callData.addPostbranchCall(callName, callFullPath.str(), defFullPath.str(), logName);
+    
+    // We find a call-return pair
+    if(retStmt != nullptr){
+        /*expr2str(retStmt)*/
+        callData.addPostbranchCall(callName, callLocFullPath.str(), callDefFullPath.str(), "return", "-");
+        callData.addPrebranchCall(callName, callLocFullPath.str(), callDefFullPath.str(), "return", "-");
+        return;
+    }
+    
+    // We find a call-log pair
+    if(logExpr && !logExpr->getDirectCallee())
+        return;
+    
+    FunctionDecl* logDecl = logExpr->getDirectCallee();
+    string logName = logDecl->getNameAsString();
+    FullSourceLoc logDef = CI->getASTContext().getFullLoc(logDecl->getLocStart());
+    if(!logDef.isValid())
+        return;
+    logDef = logDef.getSpellingLoc();
+    
+    string logDefFile = logDef.printToString(logDef.getManager());
+    logDefFile = logDefFile.substr(0, logDefFile.find_first_of(':'));
+    SmallString<128> logDefFullPath(logDefFile);
+    CI->getFileManager().makeAbsolutePath(logDefFullPath);
+    
+
+    callData.addPostbranchCall(callName, callLocFullPath.str(), callDefFullPath.str(), logName, logDefFullPath.str());
+    
+    pair<CallExpr*, string> mypair = make_pair(callExpr, logName);
+    // For if(foo()) bar(); bar();
+    // Ignore the second bar()
+    if(hasSameLog[mypair] == false){
+        hasSameLog[mypair] = true;
+        callData.addPrebranchCall(callName, callLocFullPath.str(), callDefFullPath.str(), logName, logDefFullPath.str());
+    }
+    return;
 }
 
 // Get the source code of given stmt
-StringRef FindPostbranchCallVisitor::expr2str(Stmt *s){
+StringRef FindBranchCallVisitor::expr2str(Stmt *s){
     
     if(!s)
         return "";
@@ -77,13 +106,16 @@ StringRef FindPostbranchCallVisitor::expr2str(Stmt *s){
 }
 
 // Search deeper-branch call site in given stmt and invoke the recordCallLog method
-void FindPostbranchCallVisitor::searchDeeperCall(Stmt *stmt, CallExpr* callExpr){
+void FindBranchCallVisitor::searchDeeperCall(Stmt *stmt, CallExpr* callExpr){
     
     if(!stmt || !callExpr)
         return;
     
-    if(CallExpr *call = dyn_cast<CallExpr>(stmt))
-        recordCallLog(callExpr, call);
+    if(auto *call = dyn_cast<CallExpr>(stmt))
+        recordCallLog(callExpr, call, nullptr);
+    
+    if(auto *retstmt = dyn_cast<ReturnStmt>(stmt))
+        recordCallLog(callExpr, nullptr, retstmt);
     
     // We don't search for the 3rd level of nested if stmt any more
     if(dyn_cast<IfStmt>(stmt) || dyn_cast<SwitchStmt>(stmt))
@@ -101,18 +133,23 @@ void FindPostbranchCallVisitor::searchDeeperCall(Stmt *stmt, CallExpr* callExpr)
 }
 
 // Search post-branch call site in given stmt and invoke the recordCallLog method
-void FindPostbranchCallVisitor::searchPostBranchCall(Stmt *stmt, CallExpr* callExpr){
+void FindBranchCallVisitor::searchPostBranchCall(Stmt *stmt, CallExpr* callExpr){
     
     if(!stmt || !callExpr)
         return;
     
-    if(CallExpr *call = dyn_cast<CallExpr>(stmt))
-            recordCallLog(callExpr, call);
+    if(auto *call = dyn_cast<CallExpr>(stmt))
+        recordCallLog(callExpr, call, nullptr);
+    
+    if(auto *retstmt = dyn_cast<ReturnStmt>(stmt))
+        recordCallLog(callExpr, nullptr, retstmt);
     
     if(dyn_cast<IfStmt>(stmt) || dyn_cast<SwitchStmt>(stmt)){
+        // So far, we only search for the first level
         return;
-        // Search for the 2nd level of nested if stmt
-        //searchDeeperCall(stmt, callExpr);
+        
+        // Search for the 2nd level of nested if stmt when necessery
+        searchDeeperCall(stmt, callExpr);
     }
     
     if(dyn_cast<WhileStmt>(stmt) || dyn_cast<ForStmt>(stmt))
@@ -126,8 +163,8 @@ void FindPostbranchCallVisitor::searchPostBranchCall(Stmt *stmt, CallExpr* callE
     return;
 }
 
-// Search pre-branch call site in given stmt and invoke the recordCallLog method
-CallExpr* FindPostbranchCallVisitor::searchPreBranchCall(Stmt *stmt){
+// Search pre-branch call site in given stmt and return the call
+CallExpr* FindBranchCallVisitor::searchPreBranchCall(Stmt *stmt){
     
     if(!stmt)
         return 0;
@@ -147,10 +184,58 @@ CallExpr* FindPostbranchCallVisitor::searchPreBranchCall(Stmt *stmt){
 }
 
 // Trave the statement and find post-branch call, which is the potential log call
-void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
+void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
     
     if(!stmt || !father)
         return;
+    
+    // If find a call expression
+    if(CallExpr* callExpr = dyn_cast<CallExpr>(stmt)){
+        if(FunctionDecl* callFunctionDecl = callExpr->getDirectCallee()){
+            
+            // Get the name, call location and definition location of the call expression
+            string callName = callFunctionDecl->getNameAsString();
+            string funcName = FD->getNameAsString();
+            FullSourceLoc callLoc = CI->getASTContext().getFullLoc(callExpr->getLocStart());
+            FullSourceLoc callDef = CI->getASTContext().getFullLoc(callFunctionDecl->getLocStart());
+            FullSourceLoc funcDef = CI->getASTContext().getFullLoc(FD->getLocStart());
+            
+            if(callLoc.isValid() && callDef.isValid() && funcDef.isValid()){
+                
+                callLoc = callLoc.getExpansionLoc();
+                callDef = callDef.getSpellingLoc();
+                funcDef = funcDef.getSpellingLoc();
+                
+                string callLocFile = callLoc.printToString(callLoc.getManager());
+                string callDefFile = callDef.printToString(callDef.getManager());
+                string funcDefFile = funcDef.printToString(funcDef.getManager());
+                
+                callLocFile = callLocFile.substr(0, callLocFile.find_first_of(':'));
+                callDefFile = callDefFile.substr(0, callDefFile.find_first_of(':'));
+                funcDefFile = funcDefFile.substr(0, funcDefFile.find_first_of(':'));
+                
+                // The API callStart.printToString(callStart.getManager()) is behaving inconsistently,
+                // more infomation see http://lists.llvm.org/pipermail/cfe-dev/2016-October/051092.html
+                // So, we use makeAbsolutePath.
+                SmallString<128> callLocFullPath(callLocFile);
+                CI->getFileManager().makeAbsolutePath(callLocFullPath);
+                SmallString<128> callDefFullPath(callDefFile);
+                CI->getFileManager().makeAbsolutePath(callDefFullPath);
+                SmallString<128> funcDefFullPath(funcDefFile);
+                CI->getFileManager().makeAbsolutePath(funcDefFullPath);
+                
+                // Store the call information into CallData
+                CallData callData;
+                callData.addFunctionCall(callName, callLocFullPath.str(), callDefFullPath.str());
+                
+                string callinfo = funcName + funcDefFullPath.str().str() + callName + callDefFullPath.str().str() + callLocFullPath.str().str();
+                if(hasRecorded[callinfo] == false){
+                    hasRecorded[callinfo] = true;
+                    callData.addCallGraph(funcName, funcDefFullPath.str(), callName, callDefFullPath.str(), callLocFullPath.str());
+                }
+            }
+        }
+    }
 
     // Deal with 1st log pattern
     //code
@@ -164,7 +249,10 @@ void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
             // Search for call in if condexpr
             if(CallExpr* callExpr = searchPreBranchCall(stmt)){
                 // Search for log in both 'then body' and 'else body'
+                branchStmt = stmt;
+                pathNumber = 0;
                 searchPostBranchCall(ifStmt->getThen(), callExpr);
+                pathNumber = 1;
                 searchPostBranchCall(ifStmt->getElse(), callExpr);
             }
         }
@@ -183,16 +271,21 @@ void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
             // Search for call in switch condexpr
             if(CallExpr* callExpr = searchPreBranchCall(stmt)){
                 // Search for log in switch body
-                searchPostBranchCall(switchStmt->getBody(), callExpr);
+                branchStmt = stmt;
+                pathNumber = 0;
+                for (SwitchCase *SC = switchStmt->getSwitchCaseList(); SC; SC = SC->getNextSwitchCase()){
+                    searchPostBranchCall(SC->getSubStmt(), callExpr);
+                    pathNumber++;
+                }
             }
         }
     }
     
     ///deal with 3rd log pattern
     //code
-    //  ret = foo();
-    //  if(ret)
-    //      log();
+    //  ret = foo();    /   ret = foo();
+    //  if(ret)         /   switch(ret)
+    //      log();      /       case 1: log();
     //\code
     
     ///find 'ret = foo()', when stmt = 'BinaryOperator', op == '=' and RHS == 'callexpr'
@@ -254,8 +347,12 @@ void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                                                             condString.find(keyVariables[i] + "[") == 0 ||
                                                             condString.find(keyVariables[i] + "->") == 0)){
                                         // Search for log in both 'then body' and 'else body'
+                                        branchStmt = brother;
+                                        pathNumber = 0;
                                         searchPostBranchCall(ifStmt->getThen(), callExpr);
+                                        pathNumber = 1;
                                         searchPostBranchCall(ifStmt->getElse(), callExpr);
+                                        break;
                                     }
                                 }
                             }
@@ -269,8 +366,14 @@ void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                                                                  condString.find(keyVariables[i] + ".") == 0 ||
                                                                  condString.find(keyVariables[i] + "[") == 0 ||
                                                                  condString.find(keyVariables[i] + "->") == 0)){
-                                    // Search for log in switch body
-                                    searchPostBranchCall(switchStmt->getBody(), callExpr);
+                                        // Search for log in switch body
+                                        branchStmt = brother;
+                                        pathNumber = 0;
+                                        for (SwitchCase *SC = switchStmt->getSwitchCaseList(); SC; SC = SC->getNextSwitchCase()){
+                                            searchPostBranchCall(SC->getSubStmt(), callExpr);
+                                            pathNumber++;
+                                        }
+                                        break;
                                     }
                                 }
                             }
@@ -290,7 +393,7 @@ void FindPostbranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
 }
 
 // Visit the function declaration and travel the function body
-bool FindPostbranchCallVisitor::VisitFunctionDecl (FunctionDecl* Declaration){
+bool FindBranchCallVisitor::VisitFunctionDecl (FunctionDecl* Declaration){
     
     if(!(Declaration->isThisDeclarationADefinition() && Declaration->hasBody()))
         return true;
@@ -301,10 +404,14 @@ bool FindPostbranchCallVisitor::VisitFunctionDecl (FunctionDecl* Declaration){
     if(functionstart.getFileID() != CI->getSourceManager().getMainFileID())
         return true;
     
-    //errs()<<"Found function "<<Declaration->getQualifiedNameAsString() ;
-    //errs()<<" @ " << functionstart.printToString(functionstart.getManager()) <<"\n";
+    //llvm::errs()<<"Found function "<<Declaration->getQualifiedNameAsString() ;
+    //llvm::errs()<<" @ " << functionstart.printToString(functionstart.getManager()) <<"\n";
+    
+    
+    FD = Declaration;
     
     hasRecorded.clear();
+    hasSameLog.clear();
     if(Stmt* function = Declaration->getBody()){
         travelStmt(function, function);
     }
@@ -313,7 +420,7 @@ bool FindPostbranchCallVisitor::VisitFunctionDecl (FunctionDecl* Declaration){
 }
 
 // Handle the translation unit and visit each function declaration
-void FindPostbranchCallConsumer::HandleTranslationUnit(ASTContext& Context) {
+void FindBranchCallConsumer::HandleTranslationUnit(ASTContext& Context) {
     Visitor.TraverseDecl(Context.getTranslationUnitDecl());
     return;
 }
@@ -323,13 +430,13 @@ void FindPostbranchCallConsumer::HandleTranslationUnit(ASTContext& Context) {
 // entirely different due to differences in flags. However, we don't want to see these ruining
 // our statistics. More detials see:
 // http://eli.thegreenplace.net/2014/05/21/compilation-databases-for-clang-based-tools
-map<string, bool> FindPostbranchCallAction::hasAnalyzed;
+map<string, bool> FindBranchCallAction::hasAnalyzed;
 
 // Creat FindFunctionCallConsuer instance and return to ActionFactory
-std::unique_ptr<clang::ASTConsumer> FindPostbranchCallAction::CreateASTConsumer(CompilerInstance& Compiler, StringRef InFile){
+std::unique_ptr<clang::ASTConsumer> FindBranchCallAction::CreateASTConsumer(CompilerInstance& Compiler, StringRef InFile){
     if(hasAnalyzed[InFile] == 0){
         hasAnalyzed[InFile] = 1 ;
-        return std::unique_ptr<ASTConsumer>(new FindPostbranchCallConsumer(&Compiler, InFile));
+        return std::unique_ptr<ASTConsumer>(new FindBranchCallConsumer(&Compiler, InFile));
     }
     else{
         return nullptr;

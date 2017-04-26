@@ -25,6 +25,8 @@
 
 #define MAX_PROJECT 100
 
+#define OUTPUT_SQL_STMT 0
+
 using namespace std;
 
 //===----------------------------------------------------------------------===//
@@ -73,35 +75,32 @@ private:
 class CallData{
 public:
     // Add a function call
-    void addFunctionCall(string callName, string callLocation, string defLocation);
+    void addFunctionCall(string callName, string callLocFullPath, string callDefFullPath);
+    
+    // Add an edge of call graph
+    void addCallGraph(string funcName, string funcDefFullPath, string callName, string callDefFullPath, string callLocFullPath);
     
     // Add a post-branch call
-    void addPostbranchCall(string callName, string callLocation, string defLocation, string logName);
+    void addPostbranchCall(string callName, string callLocFullPath, string callDefFullPath, string logName, string logDefFullPath);
     
-    // Print all function call infomation
-    void printFunctionCall();
+    // Add a pre-branch call
+    void addPrebranchCall(string callName, string callLocFullPath, string callDefFullPath, string logName, string logDefFullPath);
     
-    // Print all post-branch call infomation
-    void printPostbranchCall();
+    // Open the SQLite database
+    void openDatabase(string databasefile);
     
-    // Set the name of SQLite database
-    void setDatabase(string name);
+    // Close the SQLite database
+    void closeDatabase();
 
 private:
     // Get the domain and project name from the full path of the file
     pair<string, string> getDomainProjectName(string callLocation);
     
-    // Get the domain ID and project ID
-    pair<int, int> getDomainProjectID(string domainName, string projectName);
-    
-    // Is the definition locates out of the project, aka, is used the third part library
-    bool isOutProjectDef(string defLocation, string domainName, string projectName);
-    
     // The name of libconfig config file
     static ConfigData configData;
     
-    // The name of SQLite database file
-    static string databaseName;
+    // The SQLite database
+    static sqlite3 *db;
 };
 
 #endif /* DataUtility_h */
