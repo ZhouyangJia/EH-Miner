@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements a utility class used for storing data.
+// This file implements the utility classes used for storing data.
 //
 //===----------------------------------------------------------------------===//
 
@@ -70,8 +70,8 @@ void ConfigData::printName(){
 //                     CallData Class
 //
 //===----------------------------------------------------------------------===//
-// This class is designed to deal with the data of function and post-brance calls.
-// All the data will be stored into database.
+// This class is designed to store the information of function calls, especially,
+// branch-related information.
 //===----------------------------------------------------------------------===//
 
 ConfigData CallData::configData;
@@ -97,6 +97,21 @@ void CallData::openDatabase(string file){
 // Close the SQLite database
 void CallData::closeDatabase(){
     sqlite3_close(db);
+}
+
+// Get the SQLite database
+sqlite3* CallData::getDatabase(){
+    return db;
+}
+
+string& replace_all_distinct(string& str,const string& old_value, const string& new_value)
+{
+    string::size_type pos = 0;
+    while ( (pos = str.find(old_value, pos)) != string::npos ) {
+        str.replace( pos, old_value.size(), new_value );
+        pos+=new_value.size();
+    }
+    return str;
 }
 
 // Callback function to get the selected data in  SQLite
@@ -144,10 +159,11 @@ void CallData::addBranchCall(BranchInfo branchInfo){
     // Prepare the sql stmt to create the table
     int rc;
     char *zErrMsg = 0;
-    string stmt = "create table if not exists branch_call (ID integer primary key autoincrement, DomainName text, ProjectName text, CallName text, CallDefLoc text, CallID text, CallStr text, CallReturn text, CallArgVec text, CallArgNum integer, ExprNodeVec text, ExprNodeNum integer, ExprStr text, LogName text, LogDefLoc text, LogID text, LogStr text, LogArgVec text, LogArgNum integer)";
+    string stmt = "create table if not exists branch_call (ID integer primary key autoincrement, DomainName text, ProjectName text, CallName text, CallDefLoc text, CallID text, CallStr text, CallReturn text, CallArgVec text, CallArgNum integer, ExprNodeVec text, ExprNodeNum integer, ExprStrVec text, PathNumberVec text, CaseLabelVec text, BranchLevel integer, LogName text, LogDefLoc text, LogID text, LogStr text, LogArgVec text, LogArgNum integer)";
     if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
     rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
     if(rc!=SQLITE_OK){
+        cerr<<stmt<<endl;
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
@@ -157,38 +173,82 @@ void CallData::addBranchCall(BranchInfo branchInfo){
     for(unsigned i = 0; i < branchInfo.callArgVec.size(); i++){
         callArgVecStr += branchInfo.callArgVec[i];
         if(i != branchInfo.callArgVec.size() - 1)
-            callArgVecStr += "#";
+            callArgVecStr += "#-_-#";
     }
     if(callArgVecStr == "")
         callArgVecStr = "-";
+    
     string exprNodeVecStr;
     for(unsigned i = 0; i < branchInfo.exprNodeVec.size(); i++){
         exprNodeVecStr += branchInfo.exprNodeVec[i];
         if(i != branchInfo.exprNodeVec.size() - 1)
-            exprNodeVecStr += "#";
+            exprNodeVecStr += "#-_-#";
     }
     if(exprNodeVecStr == "")
         exprNodeVecStr = "-";
+    
     string logArgVecStr;
     for(unsigned i = 0; i < branchInfo.logArgVec.size(); i++){
         logArgVecStr += branchInfo.logArgVec[i];
         if(i != branchInfo.logArgVec.size() - 1)
-            logArgVecStr += "#";
+            logArgVecStr += "#-_-#";
     }
     if(logArgVecStr == "")
         logArgVecStr = "-";
     
+    string exprStrVecStr;
+    for(unsigned i = 0; i < branchInfo.exprStrVec.size(); i++){
+        exprStrVecStr += branchInfo.exprStrVec[i];
+        if(i != branchInfo.exprStrVec.size() - 1)
+            exprStrVecStr += "#-_-#";
+    }
+    if(exprStrVecStr == "")
+        exprStrVecStr = "-";
+    
+    string pathNumberVecStr;
+    for(unsigned i = 0; i < branchInfo.pathNumberVec.size(); i++){
+        char pathNumber[10];
+        sprintf(pathNumber, "%d", branchInfo.pathNumberVec[i]);
+        pathNumberVecStr += pathNumber;
+        if(i != branchInfo.pathNumberVec.size() - 1)
+            pathNumberVecStr += "#-_-#";
+    }
+    if(pathNumberVecStr == "")
+        pathNumberVecStr = "-";
+    
+    string caseLabelVecStr;
+    for(unsigned i = 0; i < branchInfo.caseLabelVec.size(); i++){
+        caseLabelVecStr += branchInfo.caseLabelVec[i];
+        if(i != branchInfo.caseLabelVec.size() - 1)
+            caseLabelVecStr += "#-_-#";
+    }
+    if(caseLabelVecStr == "")
+        caseLabelVecStr = "-";
+    
     char callArgNumStr[10];
     char exprNodeNumStr[10];
+    char branchLevelStr[10];
     char logArgNumStr[10];
     sprintf(callArgNumStr, "%lu", branchInfo.callArgVec.size());
     sprintf(exprNodeNumStr, "%lu", branchInfo.exprNodeVec.size());
+    sprintf(branchLevelStr, "%lu", branchInfo.exprStrVec.size());
     sprintf(logArgNumStr, "%lu", branchInfo.logArgVec.size());
-
-    stmt = "insert into branch_call (DomainName, ProjectName, CallName, CallDefLoc, CallID, CallStr, CallReturn, CallArgVec, CallArgNum, ExprNodeVec, ExprNodeNum, ExprStr, LogName, LogDefLoc, LogID, LogStr, LogArgVec, LogArgNum) values ('" + domainName + "', '" + projectName + "', '" + branchInfo.callName + "', '" + branchInfo.callDefLoc + "', '" + branchInfo.callID + "', '" + branchInfo.callStr + "', '" + branchInfo.callReturn + "', '" + callArgVecStr + "', '" + callArgNumStr + "', '" + exprNodeVecStr + "', '" + exprNodeNumStr + "', '" + branchInfo.exprStr + "', '" + branchInfo.logName + "', '" + branchInfo.logDefLoc + "', '" + branchInfo.logID + "', '" + branchInfo.logStr + "', '" + logArgVecStr + "', '" + logArgNumStr +"')";
+    
+    // Replace "'" by "''" to make sqlite happy
+    branchInfo.callStr = replace_all_distinct(branchInfo.callStr, "'", "''");
+    branchInfo.callReturn = replace_all_distinct(branchInfo.callReturn, "'", "''");
+    callArgVecStr = replace_all_distinct(callArgVecStr, "'", "''");
+    exprNodeVecStr = replace_all_distinct(exprNodeVecStr, "'", "''");
+    exprStrVecStr = replace_all_distinct(exprStrVecStr, "'", "''");
+    caseLabelVecStr = replace_all_distinct(caseLabelVecStr, "'", "''");
+    branchInfo.logStr = replace_all_distinct(branchInfo.logStr, "'", "''");
+    logArgVecStr = replace_all_distinct(logArgVecStr, "'", "''");
+    
+    stmt = "insert into branch_call (DomainName, ProjectName, CallName, CallDefLoc, CallID, CallStr, CallReturn, CallArgVec, CallArgNum, ExprNodeVec, ExprNodeNum, ExprStrVec, PathNumberVec, CaseLabelVec, BranchLevel, LogName, LogDefLoc, LogID, LogStr, LogArgVec, LogArgNum) values ('" + domainName + "', '" + projectName + "', '" + branchInfo.callName + "', '" + branchInfo.callDefLoc + "', '" + branchInfo.callID + "', '" + branchInfo.callStr + "', '" + branchInfo.callReturn + "', '" + callArgVecStr + "', '" + callArgNumStr + "', '" + exprNodeVecStr + "', '" + exprNodeNumStr + "', '" + exprStrVecStr + "', '" + pathNumberVecStr + "', '" + caseLabelVecStr + "', '" + branchLevelStr + "', '" + branchInfo.logName + "', '" + branchInfo.logDefLoc + "', '" + branchInfo.logID + "', '" + branchInfo.logStr + "', '" + logArgVecStr + "', '" + logArgNumStr +"')";
     if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
     rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
     if(rc!=SQLITE_OK){
+        cerr<<stmt<<endl;
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
@@ -214,6 +274,7 @@ void CallData::addPrebranchCall(string callName, string callLocFullPath, string 
     if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
     rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
     if(rc!=SQLITE_OK){
+        cerr<<stmt<<endl;
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
@@ -228,6 +289,7 @@ void CallData::addPrebranchCall(string callName, string callLocFullPath, string 
     if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
     rc = sqlite3_exec(db, stmt.c_str(), cb_get_info, &rowdata, &zErrMsg);
     if(rc!=SQLITE_OK){
+        cerr<<stmt<<endl;
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
@@ -240,6 +302,7 @@ void CallData::addPrebranchCall(string callName, string callLocFullPath, string 
         if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
+            cerr<<stmt<<endl;
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
             sqlite3_free(zErrMsg);
         }
@@ -260,6 +323,7 @@ void CallData::addPrebranchCall(string callName, string callLocFullPath, string 
         //execute the update stmt
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
+            cerr<<stmt<<endl;
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
             sqlite3_free(zErrMsg);
         }
@@ -285,6 +349,7 @@ void CallData::addPostbranchCall(string callName, string callLocFullPath, string
     if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
     rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
     if(rc!=SQLITE_OK){
+        cerr<<stmt<<endl;
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
@@ -299,6 +364,7 @@ void CallData::addPostbranchCall(string callName, string callLocFullPath, string
     if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
     rc = sqlite3_exec(db, stmt.c_str(), cb_get_info, &rowdata, &zErrMsg);
     if(rc!=SQLITE_OK){
+        cerr<<stmt<<endl;
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
@@ -311,6 +377,7 @@ void CallData::addPostbranchCall(string callName, string callLocFullPath, string
         if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
+            cerr<<stmt<<endl;
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
             sqlite3_free(zErrMsg);
         }
@@ -338,6 +405,7 @@ void CallData::addPostbranchCall(string callName, string callLocFullPath, string
         //execute the update stmt
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
+            cerr<<stmt<<endl;
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
             sqlite3_free(zErrMsg);
         }
@@ -396,6 +464,7 @@ void CallData::addFunctionCall(string callName, string callLocFullPath, string c
     if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
     rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
     if(rc!=SQLITE_OK){
+        cerr<<stmt<<endl;
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
@@ -410,6 +479,7 @@ void CallData::addFunctionCall(string callName, string callLocFullPath, string c
     if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
     rc = sqlite3_exec(db, stmt.c_str(), cb_get_info, &rowdata, &zErrMsg);
     if(rc!=SQLITE_OK){
+        cerr<<stmt<<endl;
         fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
@@ -422,6 +492,7 @@ void CallData::addFunctionCall(string callName, string callLocFullPath, string c
         if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
+            cerr<<stmt<<endl;
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
             sqlite3_free(zErrMsg);
         }
@@ -441,6 +512,7 @@ void CallData::addFunctionCall(string callName, string callLocFullPath, string c
         if(OUTPUT_SQL_STMT)cerr<<stmt<<endl;
         rc = sqlite3_exec(db, stmt.c_str(), 0, 0, &zErrMsg);
         if(rc!=SQLITE_OK){
+            cerr<<stmt<<endl;
             fprintf(stderr, "SQL error: %s\n", zErrMsg);
             sqlite3_free(zErrMsg);
         }

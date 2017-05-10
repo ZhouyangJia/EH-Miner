@@ -8,8 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements a frontend action to output function calls which are
-// called before or after checking by a branch statement.
+// This file implements a frontend action to emit information of function calls.
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,6 +18,7 @@
 #include <map>
 #include <vector>
 #include <string>
+#include <utility>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdio.h>
@@ -90,12 +90,12 @@ private:
     // Search pre-branch call site in given stmt
     CallExpr* searchPreBranchCall(Stmt* stmt);
     // Search post-branch call site in given stmt
-    void searchPostBranchCall(Stmt* stmt, CallExpr* callExpr);
-    // Search deeper-branch call site in given stmt
-    void searchDeeperCall(Stmt* stmt, CallExpr* callExpr);
+    bool searchPostBranchCall(Stmt* stmt, CallExpr* callExpr, string keyword);
     
     // Get the source code of given stmt
-    StringRef expr2str(Stmt* stmt);
+    StringRef getSourceCode(Stmt* stmt);
+    // Get the source code of given decl
+    StringRef getSourceCode(Decl* decl);
     
     // Get the expr node vector from branch condition
     vector<string> getExprNodeVec(Expr* expr);
@@ -109,9 +109,16 @@ private:
     FunctionDecl* FD;
     
     // Information about the function call
-    // Record the branch statement and the path where the post-branch call appears
+    // Record the branch statement, path number and caselable (if any) where the post-branch call appears
     Stmt* mBranchStmt;
     int   mPathNumber;
+    Expr* mCaseLabel;
+    // For each branch, we push an instance for each of following vectors.
+    // So the whoel vectors can record nested branch.
+    vector<Stmt*> mBranchStmtVec;
+    vector<int>   mPathNumberVec;
+    vector<Expr*> mCaseLabelVec;
+    
     // Record the return name, if any
     string mReturnName;
     

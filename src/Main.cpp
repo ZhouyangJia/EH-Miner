@@ -21,6 +21,7 @@
 #include "FindFunctionCall.h"
 #include "FindBranchCall.h"
 #include "DataUtility.h"
+#include "MiningEngine.h"
 
 #include <libconfig.h>
 #include <sqlite3.h>
@@ -109,9 +110,13 @@ static cl::opt<bool> FindBranchCall("find-branch-call",
                                       cl::desc("Find branch calls."),
                                     cl::cat(ClangMytoolCategory));
 
-static cl::opt<bool> GetBranchInfo("get-branch-info",
-                                    cl::desc("Get branch info."),
+static cl::opt<bool> GetCallingRule("get-calling-rule",
+                                    cl::desc("Get calling rule."),
                                     cl::cat(ClangMytoolCategory));
+
+static cl::opt<int> MinProjNum("min-project-number",
+                               cl::desc("Set the minimal project number."),
+                               cl::cat(ClangMytoolCategory));
 
 static cl::opt<string> ConfigFile("config-file",
                                       cl::desc("Specify config file."),
@@ -234,6 +239,7 @@ int initConfig(string config_file){
 // Please read from here, have fun :)
 int main(int argc, const char **argv){
     
+    // Get command line options and source files
     CommonOptionsParser OptionsParser(argc, argv, ClangMytoolCategory);
     vector<string> source = OptionsParser.getSourcePathList();
 
@@ -248,8 +254,10 @@ int main(int argc, const char **argv){
         exit(1);
     }
     
-    // If we specify the file with all source file names, we will analyze those files
-    // instead of files in command line.
+    // If we specify a file which contains all source file names.
+    // The tool will analyze those files instead of files from command line.
+    // We need to use this option when analyzing tens of thoudsands of files,
+    // since thess files may lead to exceed the limitation of commands line lenth.
     if(!SourceFile.empty()){
         if(freopen(SourceFile.c_str(), "r", stdin) == NULL)
             fprintf(stderr,"error redirecting stdin\n");
@@ -260,6 +268,7 @@ int main(int argc, const char **argv){
         }
     }
     
+    // Set the database
     if(!DatabaseFile.empty()){
         CallData callData;
         callData.openDatabase(DatabaseFile);
@@ -269,29 +278,46 @@ int main(int argc, const char **argv){
         exit(1);
     }
     
-    if(!FindBranchCall){
-        errs()<<"Please specify the action to do (e.g., -find-branch-call)!\n";
+    // At least one action should be done
+    if(!FindBranchCall && !GetCallingRule){
+        errs()<<"Please specify the action to do (e.g., -find-branch-call, -get-calling-rule)!\n";
         exit(1);
     }
     
     // Start analyzing
     if(FindBranchCall){
-        std::unique_ptr<FrontendActionFactory> FrontendFactory = newFrontendActionFactory<FindBranchCallAction>();
-        // We analyze the source files one by one, since something weird happens when analyzing at once.
+        // We analyze the source files one by one, since something weird happens when analyzing all files at once.
         // More details see http://lists.llvm.org/pipermail/cfe-dev/2015-April/042654.html
         for(unsigned i = 0; i < source.size(); i++){
             vector<string> mysource;
             mysource.push_back(source[i]);
+            
+            // Print monitoring information
             time_t now_time = time(NULL);
             struct tm* current_time = localtime(&now_time);
             llvm::errs()<<current_time->tm_hour<<":"<<current_time->tm_min<<":"<<current_time->tm_sec<<" ";
-            llvm::errs()<<"["<<i+1<<"/"<<source.size()<<"]"<<" Find branch call in "<<mysource[0]<<"\n";
+            llvm::errs()<<"["<<i+1<<"/"<<source.size()<<"]"<<" Find call information in "<<mysource[0]<<"\n";
+            
+            // Run analyzing action
             ClangTool Tool(OptionsParser.getCompilations(), mysource);
+            std::unique_ptr<FrontendActionFactory> FrontendFactory = newFrontendActionFactory<FindBranchCallAction>();
             Tool.setDiagnosticConsumer(new IgnoringDiagConsumer());
             Tool.run(FrontendFactory.get());
         }
     }
     
+    // Start mining
+    if(GetCallingRule){
+        
+        // Set database
+        CallData callData;
+        MiningEngine miningEngine(callData.getDatabase(), MinProjNum);
+        
+        // Run mining engine
+        miningEngine.runAnalysis();
+    }
+    
+    // Close database
     CallData callData;
     callData.closeDatabase();
     

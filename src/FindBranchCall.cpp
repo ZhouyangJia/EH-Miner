@@ -8,8 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements a frontend action to output function calls which are
-// called after checking by a branch statement.
+// This file implements a frontend action to emit information of function calls.
 //
 //===----------------------------------------------------------------------===//
 
@@ -31,13 +30,30 @@ bool isVariableChar(char c){
 }
 
 // Get the source code of given stmt
-StringRef FindBranchCallVisitor::expr2str(Stmt *s){
+StringRef FindBranchCallVisitor::getSourceCode(Stmt *s){
     
     if(!s)
         return "";
     
     FullSourceLoc begin = CI->getASTContext().getFullLoc(s->getLocStart());
     FullSourceLoc end = CI->getASTContext().getFullLoc(s->getLocEnd());
+    
+    if(begin.isInvalid() || end.isInvalid())
+        return "";
+    
+    SourceRange sr(begin.getExpansionLoc(), end.getExpansionLoc());
+    
+    return Lexer::getSourceText(CharSourceRange::getTokenRange(sr), CI->getSourceManager(), LangOptions(), 0);
+}
+
+// Get the source code of given decl
+StringRef FindBranchCallVisitor::getSourceCode(Decl *d){
+    
+    if(!d)
+        return "";
+    
+    FullSourceLoc begin = CI->getASTContext().getFullLoc(d->getLocStart());
+    FullSourceLoc end = CI->getASTContext().getFullLoc(d->getLocEnd());
     
     if(begin.isInvalid() || end.isInvalid())
         return "";
@@ -54,12 +70,28 @@ vector<string> FindBranchCallVisitor::getExprNodeVec(Expr* expr){
     expr = expr->IgnoreImpCasts();
     expr = expr->IgnoreImplicit();
     expr = expr->IgnoreParens();
+    expr = expr->IgnoreCasts();
     
-    if(auto *unaryOperator = dyn_cast<UnaryOperator>(expr)){
+    //expr->dump();
+    // Three kinds of operators
+    if(auto *parenExpr = dyn_cast<ParenExpr >(expr)){
+        vector<string> child = getExprNodeVec(parenExpr->getSubExpr());
+        
+        ret.insert(ret.end(), child.begin(), child.end());
+    }
+    else if(auto *unaryOperator = dyn_cast<UnaryOperator>(expr)){
         vector<string> child = getExprNodeVec(unaryOperator->getSubExpr());
         
         ret.insert(ret.end(), child.begin(), child.end());
-        ret.push_back(UnaryOperator::getOpcodeStr(unaryOperator->getOpcode()));
+        
+        string op = "UO";
+        op += "_";
+        char code[10];
+        sprintf(code, "%d", unaryOperator->getOpcode());
+        op += code;
+        op += "_";
+        op += UnaryOperator::getOpcodeStr(unaryOperator->getOpcode());
+        ret.push_back(op);
     }
     else if(auto *binaryOperator = dyn_cast<BinaryOperator>(expr)){
         vector<string> lchild = getExprNodeVec(binaryOperator->getLHS());
@@ -67,7 +99,15 @@ vector<string> FindBranchCallVisitor::getExprNodeVec(Expr* expr){
         
         ret.insert(ret.end(), lchild.begin(), lchild.end());
         ret.insert(ret.end(), rchild.begin(), rchild.end());
-        ret.push_back(BinaryOperator::getOpcodeStr(binaryOperator->getOpcode()));
+        
+        string op = "BO";
+        op += "_";
+        char code[10];
+        sprintf(code, "%d", binaryOperator->getOpcode());
+        op += code;
+        op += "_";
+        op += BinaryOperator::getOpcodeStr(binaryOperator->getOpcode());
+        ret.push_back(op);
     }
     else if(auto *conditionalOperator = dyn_cast<ConditionalOperator>(expr)){
         vector<string> lchild = getExprNodeVec(conditionalOperator->getCond());
@@ -79,8 +119,157 @@ vector<string> FindBranchCallVisitor::getExprNodeVec(Expr* expr){
         ret.insert(ret.end(), rchild.begin(), rchild.end());
         ret.push_back(":?");
     }
+    
+    // All kinds of constants
+    else if(auto *characterLiteral = dyn_cast<CharacterLiteral>(expr)){
+        ostringstream oss;
+        oss << characterLiteral->getValue();
+        ret.push_back(oss.str());
+        ret.push_back("UO_CONSTANT_INT");
+    }
+    else if(auto *floatingLiteral = dyn_cast<FloatingLiteral>(expr)){
+        ostringstream oss;
+        oss << floatingLiteral->getValueAsApproximateDouble();
+        ret.push_back(oss.str());
+        ret.push_back("UO_CONSTANT_FLOAT");
+    }
+    else if(auto *integerLiteral = dyn_cast<IntegerLiteral>(expr)){
+        ret.push_back(integerLiteral->getValue().toString(10,true));
+        ret.push_back("UO_CONSTANT_INT");
+    }
+    else if(auto *stringLiteral = dyn_cast<StringLiteral>(expr)){
+        ret.push_back(stringLiteral->getString().str());
+        ret.push_back("UO_CONSTANT_STRING");
+    }
+    else if(auto *boolLiteral = dyn_cast<CXXBoolLiteralExpr>(expr)){
+        boolLiteral->getValue()?ret.push_back("1"):ret.push_back("0");
+        ret.push_back("UO_CONSTANT_BOOL");
+    }
+    else if(dyn_cast<GNUNullExpr>(expr) || dyn_cast<CXXNullPtrLiteralExpr>(expr)){
+        ret.push_back("0");
+        ret.push_back("UO_CONSTANT_NULL");
+    }
+    
+    // All kinds of variables (including array and member)
+    else if(auto *declRefExpr = dyn_cast<DeclRefExpr>(expr)){
+        if(auto *enumConstantDecl = dyn_cast<EnumConstantDecl>(declRefExpr->getFoundDecl())){
+            ret.push_back(enumConstantDecl->getInitVal().toString(10,true));
+            ret.push_back("UO_CONSTANT_INT");
+        }
+        else{
+            ret.push_back(declRefExpr->getDecl()->getDeclName().getAsString());
+            const Type* type = declRefExpr->getType().getTypePtrOrNull();
+            
+            if(type == nullptr){
+                cerr<<"Null type:"<<endl;
+                declRefExpr->dump();
+                ret.push_back("UO_VARIABLE_NULL");
+            }
+            else if(type->isIntegralOrEnumerationType() or type->isAnyCharacterType())
+                ret.push_back("UO_VARIABLE_INT");
+            else if(type->isRealFloatingType())
+                ret.push_back("UO_VARIABLE_FLOAT");
+            else if(type->isBooleanType())
+                ret.push_back("UO_VARIABLE_BOOL");
+            else if(type->isAnyPointerType())
+                ret.push_back("UO_VARIABLE_POINTER");
+            else
+                ret.push_back("UO_VARIABLE_NONE");
+        }
+    }
+    else if(auto *arraySubscriptExpr = dyn_cast<ArraySubscriptExpr>(expr)){
+        
+        vector<string> base = getExprNodeVec(arraySubscriptExpr->getBase());
+        vector<string> index = getExprNodeVec(arraySubscriptExpr->getIdx());
+        
+        ret.insert(ret.end(), base.begin(), base.end());
+        ret.insert(ret.end(), index.begin(), index.end());
+        
+        ret.push_back("BO_ARRAY");
+        
+        const Type* type = arraySubscriptExpr->getType().getTypePtrOrNull();
+        if(type == nullptr){
+            cerr<<"Null type:"<<endl;
+            declRefExpr->dump();
+            ret.push_back("UO_VARIABLE_NULL");
+        }
+        else if(type->isIntegralOrEnumerationType() or type->isAnyCharacterType())
+            ret.push_back("UO_VARIABLE_INT");
+        else if(type->isRealFloatingType())
+            ret.push_back("UO_VARIABLE_FLOAT");
+        else if(type->isAnyCharacterType())
+            ret.push_back("UO_VARIABLE_BOOL");
+        else if(type->isAnyPointerType())
+            ret.push_back("UO_VARIABLE_POINTER");
+        else
+            ret.push_back("UO_VARIABLE_NONE");
+    }
+    else if(auto *memberExpr = dyn_cast<MemberExpr>(expr)){
+        ret.push_back(memberExpr->getMemberDecl()->getName().str());
+        
+        vector<string> base = getExprNodeVec(memberExpr->getBase());
+        ret.insert(ret.end(), base.begin(), base.end());
+        
+        ret.push_back("BO_MEMBER");
+        
+        const Type* type = memberExpr->getType().getTypePtrOrNull();
+        if(type == nullptr){
+            cerr<<"Null type:"<<endl;
+            declRefExpr->dump();
+            ret.push_back("UO_VARIABLE_NULL");
+        }
+        else if(type->isIntegralOrEnumerationType() or type->isAnyCharacterType())
+            ret.push_back("UO_VARIABLE_INT");
+        else if(type->isRealFloatingType())
+            ret.push_back("UO_VARIABLE_FLOAT");
+        else if(type->isAnyCharacterType())
+            ret.push_back("UO_VARIABLE_BOOL");
+        else if(type->isAnyPointerType())
+            ret.push_back("UO_VARIABLE_POINTER");
+        else
+            ret.push_back("UO_VARIABLE_NONE");
+    }
+    
+    else if(auto *callExpr = dyn_cast<CallExpr>(expr)){
+        ret.push_back(getSourceCode(expr).str());
+        
+        const Type* type = callExpr->getType().getTypePtrOrNull();
+        if(type == nullptr){
+            cerr<<"Null type:"<<endl;
+            declRefExpr->dump();
+            ret.push_back("UO_VARIABLE_NULL");
+        }
+        else if(type->isIntegralOrEnumerationType())
+            ret.push_back("UO_VARIABLE_INT");
+        else if(type->isRealFloatingType())
+            ret.push_back("UO_VARIABLE_FLOAT");
+        else if(type->isAnyCharacterType())
+            ret.push_back("UO_VARIABLE_CHAR");
+        else if(type->isBooleanType())
+            ret.push_back("UO_VARIABLE_BOOL");
+        else if(type->isAnyPointerType())
+            ret.push_back("UO_VARIABLE_POINTER");
+        else
+            ret.push_back("UO_VARIABLE_NONE");
+    }
+    
+    // Knonw expr, get source code directly
+    else if(dyn_cast<StmtExpr>(expr) ||
+            dyn_cast<UnaryExprOrTypeTraitExpr>(expr) ||
+            dyn_cast<CXXUnresolvedConstructExpr>(expr) ||
+            dyn_cast<CXXThisExpr>(expr) ||
+            dyn_cast<CXXNewExpr>(expr) ||
+            dyn_cast<OffsetOfExpr>(expr) ||
+            dyn_cast<AtomicExpr>(expr) ){
+        ret.push_back(getSourceCode(expr).str());
+    }
+    
+    // Unknown expr, output expr type and get source code
     else{
-        ret.push_back(expr2str(expr));
+        FullSourceLoc otherLoc;
+        otherLoc = CI->getASTContext().getFullLoc(expr->getExprLoc());
+        cerr<<"Unknown expr: "<<expr->getStmtClassName()<<" @ "<<otherLoc.getExpansionLoc().printToString(CI->getSourceManager())<<endl;
+        ret.push_back(getSourceCode(expr).str());
     }
     
     return ret;
@@ -124,17 +313,52 @@ void FindBranchCallVisitor::recordBranchCall(CallExpr *callExpr, CallExpr *logEx
     
     // Collect branch condition information
     vector<string> exprNodeVec;
-    string exprStr;
-    if(auto *ifStmt = dyn_cast<IfStmt>(mBranchStmt)){
-        exprNodeVec = getExprNodeVec(ifStmt->getCond());
-        exprStr = expr2str(ifStmt->getCond());
+    vector<string> exprStr;
+    vector<string> caseLabelStr;
+    if(mBranchStmtVec.size() != mPathNumberVec.size() || mPathNumberVec.size() != mCaseLabelVec.size()){
+        llvm::errs()<<"Something worng when analyzing condition expr!\n";
+        return;
     }
-    else if(auto *switchStmt = dyn_cast<SwitchStmt>(mBranchStmt)){
-        exprNodeVec = getExprNodeVec(switchStmt->getCond());
-        exprStr = expr2str(switchStmt->getCond());
-    }
-    else{
-        exprStr = "-";
+    
+    for(unsigned i = 0; i < mBranchStmtVec.size(); i++){
+        // Get the overall expr node vector
+        vector<string> tmp;
+        if(auto *ifStmt = dyn_cast<IfStmt>(mBranchStmtVec[i])){
+            tmp = getExprNodeVec(ifStmt->getCond());
+            exprNodeVec.insert(exprNodeVec.end(), tmp.begin(), tmp.end());
+            if(mPathNumberVec[i] == 1)
+                exprNodeVec.push_back("UO_9_!");
+            caseLabelStr.push_back("-");
+        }
+        else if(auto *switchStmt = dyn_cast<SwitchStmt>(mBranchStmtVec[i])){
+            // Here we have a bug that when the switchcase have no break statement,
+            // the conditions will be different.
+            tmp = getExprNodeVec(switchStmt->getCond());
+            exprNodeVec.insert(exprNodeVec.end(), tmp.begin(), tmp.end());
+            if(mCaseLabelVec[i]){
+                tmp = getExprNodeVec(mCaseLabelVec[i]);
+                exprNodeVec.insert(exprNodeVec.end(), tmp.begin(), tmp.end());
+                exprNodeVec.push_back("BO_13_==");
+                caseLabelStr.push_back(getSourceCode(mCaseLabelVec[i]));
+            }
+            else{
+                exprNodeVec.push_back("__switch_default");
+                exprNodeVec.push_back("BO_13_==");
+                caseLabelStr.push_back("__switch_default");
+            }
+        }
+        else
+            return;
+        
+        // Record expr string vector
+        if(auto *ifStmt = dyn_cast<IfStmt>(mBranchStmtVec[i]))
+            exprStr.push_back(getSourceCode(ifStmt->getCond()));
+        else if(auto *switchStmt = dyn_cast<SwitchStmt>(mBranchStmtVec[i]))
+            exprStr.push_back(getSourceCode(switchStmt->getCond()));
+        
+        // Connect two conditions from different branch statements
+        if(i != 0)
+            exprNodeVec.push_back("BO_18_&&");
     }
     
     // Arrange the branch info elements
@@ -142,13 +366,15 @@ void FindBranchCallVisitor::recordBranchCall(CallExpr *callExpr, CallExpr *logEx
     branchInfo.callName = callName;
     branchInfo.callDefLoc = callDefFullPath.str();
     branchInfo.callID = callLocFullPath.str();
-    branchInfo.callStr = expr2str(callExpr);
+    branchInfo.callStr = getSourceCode(callExpr);
     branchInfo.callReturn = mReturnName;
     for(unsigned i = 0; i < callExpr->getNumArgs(); i++){
-        branchInfo.callArgVec.push_back(expr2str(callExpr->getArg(i)));
+        branchInfo.callArgVec.push_back(getSourceCode(callExpr->getArg(i)));
     }
     branchInfo.exprNodeVec = exprNodeVec;
-    branchInfo.exprStr = exprStr;
+    branchInfo.exprStrVec = exprStr;
+    branchInfo.caseLabelVec = caseLabelStr;
+    branchInfo.pathNumberVec = mPathNumberVec;
 
     // Find a call-return pair
     if(retStmt != nullptr){
@@ -168,8 +394,8 @@ void FindBranchCallVisitor::recordBranchCall(CallExpr *callExpr, CallExpr *logEx
         branchInfo.logName = "return";
         branchInfo.logDefLoc = "-";
         branchInfo.logID = retLocFullPath.str();
-        branchInfo.logStr = expr2str(retStmt);
-        branchInfo.logArgVec.push_back(expr2str(retStmt->getRetValue()));
+        branchInfo.logStr = getSourceCode(retStmt);
+        branchInfo.logArgVec.push_back(getSourceCode(retStmt->getRetValue()));
         callData.addBranchCall(branchInfo);
         
         // Store the post-branch and pre-branch info to callData
@@ -207,9 +433,9 @@ void FindBranchCallVisitor::recordBranchCall(CallExpr *callExpr, CallExpr *logEx
         branchInfo.logName = logName;
         branchInfo.logDefLoc = logDefFullPath.str();
         branchInfo.logID = logLocFullPath.str();
-        branchInfo.logStr = expr2str(logExpr);
+        branchInfo.logStr = getSourceCode(logExpr);
         for(unsigned i = 0; i < logExpr->getNumArgs(); i++){
-            branchInfo.logArgVec.push_back(expr2str(logExpr->getArg(i)));
+            branchInfo.logArgVec.push_back(getSourceCode(logExpr->getArg(i)));
         }
         callData.addBranchCall(branchInfo);
         
@@ -226,10 +452,10 @@ void FindBranchCallVisitor::recordBranchCall(CallExpr *callExpr, CallExpr *logEx
 }
 
 // Search post-branch call site in given stmt and invoke the recordCallLog method
-void FindBranchCallVisitor::searchPostBranchCall(Stmt *stmt, CallExpr* callExpr){
-    
+bool FindBranchCallVisitor::searchPostBranchCall(Stmt *stmt, CallExpr* callExpr, string keyword){
+
     if(!stmt || !callExpr)
-        return;
+        return true;
     
     if(auto *call = dyn_cast<CallExpr>(stmt))
         recordBranchCall(callExpr, call, nullptr);
@@ -237,20 +463,98 @@ void FindBranchCallVisitor::searchPostBranchCall(Stmt *stmt, CallExpr* callExpr)
     if(auto *retstmt = dyn_cast<ReturnStmt>(stmt))
         recordBranchCall(callExpr, nullptr, retstmt);
     
-    if(dyn_cast<IfStmt>(stmt) || dyn_cast<SwitchStmt>(stmt)){
-        // So far, we only search for the first level
-        return;
+    // Search recursively for nested if branch
+    if(auto *ifStmt = dyn_cast<IfStmt>(stmt)){
+        if(keyword != ""){
+            string condString = getSourceCode(ifStmt->getCond());
+            if(condString != keyword){
+                size_t pos = condString.find(keyword);
+                unsigned keylen = keyword.size();
+                unsigned conlen = condString.size();
+                if(pos == string::npos)
+                    return true;
+                if(pos + keylen < conlen && isVariableChar(condString[pos+keylen]))
+                    return true;
+                if(pos > 0 && isVariableChar(condString[pos-1]))
+                    return true;
+            }
+            
+            // Search for log in both 'then body' and 'else body'
+            mBranchStmt = stmt;
+            mCaseLabel = nullptr;
+            mPathNumber = 0;
+            mBranchStmtVec.push_back(mBranchStmt);
+            mPathNumberVec.push_back(mPathNumber);
+            mCaseLabelVec.push_back(mCaseLabel);
+            searchPostBranchCall(ifStmt->getThen(), callExpr, "");
+            mPathNumberVec.pop_back();
+            mPathNumber = 1;
+            mPathNumberVec.push_back(mPathNumber);
+            searchPostBranchCall(ifStmt->getElse(), callExpr, "");
+            mBranchStmtVec.pop_back();
+            mPathNumberVec.pop_back();
+            mCaseLabelVec.pop_back();
+        }
+        return true;
     }
     
+    // Search recursively for nested switch branch
+    if(auto *switchStmt = dyn_cast<SwitchStmt>(stmt)){
+        if(keyword != ""){
+            string condString = getSourceCode(switchStmt->getCond());
+            if(condString != keyword){
+                size_t pos = condString.find(keyword);
+                unsigned keylen = keyword.size();
+                unsigned conlen = condString.size();
+                if(pos == string::npos)
+                    return true;
+                if(pos + keylen < conlen && isVariableChar(condString[pos+keylen]))
+                    return true;
+                if(pos > 0 && isVariableChar(condString[pos-1]))
+                    return true;
+            }
+            
+            // Search for log in switch body
+            mBranchStmt = stmt;
+            mCaseLabel = nullptr;
+            mPathNumber = 0;
+            for (SwitchCase *SC = switchStmt->getSwitchCaseList(); SC; SC = SC->getNextSwitchCase()){
+                if(auto * caseStmt = dyn_cast<CaseStmt>(SC)){
+                    mCaseLabel = caseStmt->getLHS();
+                }
+                mBranchStmtVec.push_back(mBranchStmt);
+                mPathNumberVec.push_back(mPathNumber);
+                mCaseLabelVec.push_back(mCaseLabel);
+                searchPostBranchCall(SC->getSubStmt(), callExpr, "");
+                mBranchStmtVec.pop_back();
+                mPathNumberVec.pop_back();
+                mCaseLabelVec.pop_back();
+                mPathNumber++;
+            }
+        }
+        return true;
+    }
+    
+    // These two branches are few used to check
     if(dyn_cast<WhileStmt>(stmt) || dyn_cast<ForStmt>(stmt))
-        return;
+        return false;
     
-    for(Stmt::child_iterator it = stmt->child_begin(); it != stmt->child_end(); ++it){
-        if(Stmt *child = *it)
-            searchPostBranchCall(child, callExpr);
+    // The non-reaching definition will be ignored, bug here
+    if(auto *bo = dyn_cast<BinaryOperator>(stmt)){
+        if(bo->getOpcode() == BO_Assign){
+            string assignName = getSourceCode(bo->getLHS());
+            if(assignName == keyword)
+                return false;
+        }
     }
     
-    return;
+    for(auto it = stmt->child_begin(); it != stmt->child_end(); ++it){
+        if(Stmt *child = *it)
+            if(searchPostBranchCall(child, callExpr, keyword) == false)
+                return false;
+    }
+    
+    return true;
 }
 
 // Search pre-branch call site in given stmt and return the call
@@ -327,7 +631,11 @@ void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
             }
         }
     }
-
+    
+    mBranchStmtVec.clear();
+    mPathNumberVec.clear();
+    mCaseLabelVec.clear();
+    
     // Deal with 1st log pattern
     //code
     //  if(foo())
@@ -342,10 +650,19 @@ void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                 // Search for log in both 'then body' and 'else body'
                 mBranchStmt = father;
                 mReturnName = "-";
+                mCaseLabel = nullptr;
                 mPathNumber = 0;
-                searchPostBranchCall(ifStmt->getThen(), callExpr);
+                mBranchStmtVec.push_back(mBranchStmt);
+                mPathNumberVec.push_back(mPathNumber);
+                mCaseLabelVec.push_back(mCaseLabel);
+                searchPostBranchCall(ifStmt->getThen(), callExpr, "");
+                mPathNumberVec.pop_back();
                 mPathNumber = 1;
-                searchPostBranchCall(ifStmt->getElse(), callExpr);
+                mPathNumberVec.push_back(mPathNumber);
+                searchPostBranchCall(ifStmt->getElse(), callExpr, "");
+                mBranchStmtVec.pop_back();
+                mPathNumberVec.pop_back();
+                mCaseLabelVec.pop_back();
             }
         }
     }
@@ -358,16 +675,28 @@ void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
     //\code
     
     // Find switch(foo()), stmt is located in the condexpr of switchstmt
-    if(SwitchStmt *switchStmt = dyn_cast<SwitchStmt>(father)){
+    else if(SwitchStmt *switchStmt = dyn_cast<SwitchStmt>(father)){
         if(switchStmt->getCond() == stmt){
             // Search for call in switch condexpr
             if(CallExpr* callExpr = searchPreBranchCall(stmt)){
                 // Search for log in switch body
                 mBranchStmt = father;
                 mReturnName = "-";
+                mCaseLabel = nullptr;
                 mPathNumber = 0;
                 for (SwitchCase *SC = switchStmt->getSwitchCaseList(); SC; SC = SC->getNextSwitchCase()){
-                    searchPostBranchCall(SC->getSubStmt(), callExpr);
+                    if(auto * caseStmt = dyn_cast<CaseStmt>(SC)){
+                        mCaseLabel = caseStmt->getLHS();
+                    }
+                    
+                    mBranchStmtVec.push_back(mBranchStmt);
+                    mPathNumberVec.push_back(mPathNumber);
+                    mCaseLabelVec.push_back(mCaseLabel);
+                    searchPostBranchCall(SC->getSubStmt(), callExpr, "");
+                    mBranchStmtVec.pop_back();
+                    mPathNumberVec.pop_back();
+                    mCaseLabelVec.pop_back();
+                    
                     mPathNumber++;
                 }
             }
@@ -382,7 +711,7 @@ void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
     //\code
     
     ///find 'ret = foo()', when stmt = 'BinaryOperator', op == '=' and RHS == 'callexpr'
-    if(BinaryOperator *binaryOperator = dyn_cast<BinaryOperator>(stmt)){
+    else if(BinaryOperator *binaryOperator = dyn_cast<BinaryOperator>(stmt)){
         if(binaryOperator->getOpcode() == BO_Assign){
             if(Expr *expr = binaryOperator->getRHS()){
                 expr = expr->IgnoreImpCasts();
@@ -393,11 +722,15 @@ void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                     // Collect return value and arguments.
                     vector<string> keyVariables;
                     keyVariables.clear();
-                    string returnName = expr2str(binaryOperator->getLHS());
+                    string returnName = getSourceCode(binaryOperator->getLHS());
                     mReturnName = returnName;
                     keyVariables.push_back(returnName);
                     for(unsigned i = 0; i < callExpr->getNumArgs(); i++){
-                        keyVariables.push_back(expr2str(callExpr->getArg(i)));
+                        string argstr = getSourceCode(callExpr->getArg(i));
+                        // Remove the & and *, e.g., &error -> error
+                        while(argstr.size() > 0 && (argstr[0] == '&' || argstr[0] == '*'))
+                            argstr = argstr.substr(1, string::npos);
+                        keyVariables.push_back(argstr);
                     }
                     
                     ///search forwards for brothers of stmt
@@ -419,7 +752,7 @@ void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                             // The non-reaching definition will be ignored
                             if(BinaryOperator *bo = dyn_cast<BinaryOperator>(brother)){
                                 if(bo->getOpcode() == BO_Assign){
-                                    string assignName = expr2str(bo->getLHS());
+                                    string assignName = getSourceCode(bo->getLHS());
                                     for(vector<string>::iterator it=keyVariables.begin();it!=keyVariables.end();){
                                         if(assignName != "" && *it == assignName){
                                             it=keyVariables.erase(it);
@@ -432,9 +765,9 @@ void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                             }
                             
                             // Find 'if(ret)'
-                            if(IfStmt *ifStmt = dyn_cast<IfStmt>(brother)){
+                            else if(IfStmt *ifStmt = dyn_cast<IfStmt>(brother)){
                                 // The return name, which is checked in condexpr
-                                StringRef condString = expr2str(ifStmt->getCond());
+                                string condString = getSourceCode(ifStmt->getCond());
                                 for(unsigned i = 0; i < keyVariables.size(); i++){
                                     if(keyVariables[i] != ""){
                                         if(condString != keyVariables[i]){
@@ -451,19 +784,28 @@ void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                                         
                                         // Search for log in both 'then body' and 'else body'
                                         mBranchStmt = brother;
+                                        mCaseLabel = nullptr;
                                         mPathNumber = 0;
-                                        searchPostBranchCall(ifStmt->getThen(), callExpr);
+                                        mBranchStmtVec.push_back(mBranchStmt);
+                                        mPathNumberVec.push_back(mPathNumber);
+                                        mCaseLabelVec.push_back(mCaseLabel);
+                                        searchPostBranchCall(ifStmt->getThen(), callExpr, keyVariables[i]);
+                                        mPathNumberVec.pop_back();
                                         mPathNumber = 1;
-                                        searchPostBranchCall(ifStmt->getElse(), callExpr);
+                                        mPathNumberVec.push_back(mPathNumber);
+                                        searchPostBranchCall(ifStmt->getElse(), callExpr, keyVariables[i]);
+                                        mBranchStmtVec.pop_back();
+                                        mPathNumberVec.pop_back();
+                                        mCaseLabelVec.pop_back();
                                         break;
                                     }
                                 }
                             }
                             
                             // Find 'switch(ret)'
-                            if(SwitchStmt *switchStmt = dyn_cast<SwitchStmt>(brother)){
+                            else if(SwitchStmt *switchStmt = dyn_cast<SwitchStmt>(brother)){
                                 // The return name, which is checked in condexpr
-                                StringRef condString = expr2str(switchStmt->getCond());
+                                string condString = getSourceCode(switchStmt->getCond());
                                 for(unsigned i = 0; i < keyVariables.size(); i++){
                                     if(keyVariables[i] != ""){
                                         if(condString != keyVariables[i]){
@@ -480,9 +822,19 @@ void FindBranchCallVisitor::travelStmt(Stmt *stmt, Stmt *father){
                                         
                                         // Search for log in switch body
                                         mBranchStmt = brother;
+                                        mCaseLabel = nullptr;
                                         mPathNumber = 0;
                                         for (SwitchCase *SC = switchStmt->getSwitchCaseList(); SC; SC = SC->getNextSwitchCase()){
-                                            searchPostBranchCall(SC->getSubStmt(), callExpr);
+                                            if(auto * caseStmt = dyn_cast<CaseStmt>(SC)){
+                                                mCaseLabel = caseStmt->getLHS();
+                                            }
+                                            mBranchStmtVec.push_back(mBranchStmt);
+                                            mPathNumberVec.push_back(mPathNumber);
+                                            mCaseLabelVec.push_back(mCaseLabel);
+                                            searchPostBranchCall(SC->getSubStmt(), callExpr, keyVariables[i]);
+                                            mBranchStmtVec.pop_back();
+                                            mPathNumberVec.pop_back();
+                                            mCaseLabelVec.pop_back();
                                             mPathNumber++;
                                         }
                                         break;
@@ -519,6 +871,9 @@ bool FindBranchCallVisitor::VisitFunctionDecl (FunctionDecl* Declaration){
     //llvm::errs()<<"Found function "<<Declaration->getQualifiedNameAsString() ;
     //llvm::errs()<<" @ " << functionstart.printToString(functionstart.getManager()) <<"\n";
     
+    // For debug
+    if(0 && Declaration->getQualifiedNameAsString() == "__bamc_compress_merge_insert")
+        Declaration->dump();
     
     FD = Declaration;
     

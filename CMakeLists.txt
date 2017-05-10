@@ -16,6 +16,8 @@ add_clang_executable(clang-dummy
     src/FindBranchCall.h
     src/DataUtility.cpp
     src/DataUtility.h
+    src/MiningEngine.cpp
+    src/MiningEngine.h
     src/Main.cpp
     )
 

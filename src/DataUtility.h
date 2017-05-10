@@ -8,7 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements a utility class used for handling function call.
+// This file implements the utility classes used for handling function call.
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,7 +19,8 @@
 #include <map>
 
 #include <iostream>
-#include <string.h>
+#include <sstream>
+#include <string>
 
 #include <sqlite3.h>
 
@@ -82,7 +83,10 @@ struct BranchInfo{
     vector<string> callArgVec;
     
     vector<string> exprNodeVec; //reverse Polish notation
-    string exprStr;
+    
+    vector<string> exprStrVec; // The following three vectors should have the same lenth
+    vector<string> caseLabelVec;
+    vector<int> pathNumberVec;
     
     string logName;
     string logDefLoc;
@@ -97,8 +101,8 @@ struct BranchInfo{
 //                     CallData Class
 //
 //===----------------------------------------------------------------------===//
-// This class is designed to deal with the data of function and post-brance calls.
-// All the data will be stored into database.
+// This class is designed to store the information of function calls, especially,
+// branch-related information.
 //===----------------------------------------------------------------------===//
 
 class CallData{
@@ -123,6 +127,9 @@ public:
     
     // Close the SQLite database
     void closeDatabase();
+    
+    // Get the SQLite database
+    sqlite3* getDatabase();
 
 private:
     // Get the domain and project name from the full path of the file
