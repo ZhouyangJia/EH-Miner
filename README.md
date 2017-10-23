@@ -1,12 +1,6 @@
 # EH-Miner
 Mining Error-Handling Bugs without Error Specification Input
 
-
-
-
-# SmartLog
-Error-Log Statement Placement by Deep Understanding of Log Intention.
-
 ---
 
 ### Introduction
